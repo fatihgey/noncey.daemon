@@ -245,28 +245,66 @@ fi
 step "Postfix: nonce-pipe transport  (master.cf)"
 MASTER_CF="/etc/postfix/master.cf"
 if grep -q "^nonce-pipe" "$MASTER_CF"; then
-    ok "nonce-pipe already present in master.cf."
+    # Update existing entry in case CONF path changed (e.g. after re-install).
+    sed -i "s|env=NONCEY_CONF=[^ ]*|env=NONCEY_CONF=${CONF}|" "$MASTER_CF"
+    ok "nonce-pipe already present in master.cf (env path refreshed)."
 else
     cp "$MASTER_CF" "${MASTER_CF}.pre-noncey.$(date +%Y%m%d%H%M%S)"
     # maxproc=1 serialises deliveries, preventing concurrent SQLite writes.
+    # env= passes NONCEY_CONF explicitly — Postfix strips the environment
+    # before invoking pipe transports, so it cannot be inherited.
     cat >> "$MASTER_CF" <<EOF
 
 # ── noncey OTP relay ──────────────────────────────────────────────────────────
 nonce-pipe  unix  -  n  n  -  1  pipe
-  flags=Rq user=noncey argv=${VENV}/bin/python3 ${INSTALL_DIR}/ingest.py \${recipient}
+  flags=Rq user=noncey env=NONCEY_CONF=${CONF} argv=${VENV}/bin/python3 ${INSTALL_DIR}/ingest.py \${recipient}
 EOF
     ok "nonce-pipe entry added to master.cf."
 fi
 
 # =============================================================================
+step "Postfix: MySQL transport map  (${ETC_DIR}/noncey-transport.cf)"
+#
+# A MySQL map that reads the transport column from the virtual_transport table.
+# Adding this to transport_maps lets the INSERT IGNORE row we write below
+# override the global virtual_transport=lmtp default for our domain.
+#
+cat > "${ETC_DIR}/noncey-transport.cf" <<EOF
+# noncey — per-domain transport lookup against virtual_transport table.
+hosts    = ${MYSQL_HOST}
+user     = ${MYSQL_USER}
+password = ${MYSQL_PASS}
+dbname   = ${MYSQL_DB}
+query    = SELECT transport FROM virtual_transport WHERE domain='%s'
+EOF
+chown root:postfix "${ETC_DIR}/noncey-transport.cf"
+chmod 640          "${ETC_DIR}/noncey-transport.cf"
+
+make_symlink "${ETC_DIR}/noncey-transport.cf" /etc/postfix/noncey-transport.cf
+ok "MySQL transport map written."
+
+CURRENT_TRANSPORT=$(postconf -h transport_maps 2>/dev/null || true)
+if echo "$CURRENT_TRANSPORT" | grep -q "noncey-transport.cf"; then
+    ok "noncey-transport.cf already in transport_maps."
+else
+    if [[ -n "$CURRENT_TRANSPORT" ]]; then
+        NEW_TRANSPORT="mysql:/etc/postfix/noncey-transport.cf, ${CURRENT_TRANSPORT}"
+    else
+        NEW_TRANSPORT="mysql:/etc/postfix/noncey-transport.cf"
+    fi
+    postconf -e "transport_maps = ${NEW_TRANSPORT}"
+    ok "transport_maps updated."
+fi
+
+# =============================================================================
 step "Postfix: virtual_transport row in MySQL"
-# Routes the entire nonce domain to nonce-pipe: (idempotent via INSERT IGNORE).
+# Routes the entire nonce domain to nonce-pipe (idempotent via INSERT IGNORE).
 if mysql -h"$MYSQL_HOST" -u"$MYSQL_USER" -p"$MYSQL_PASS" "$MYSQL_DB" \
     -e "INSERT IGNORE INTO virtual_transport (domain, transport)
         VALUES ('${DOMAIN}', 'nonce-pipe:');" 2>/dev/null; then
     ok "virtual_transport: ${DOMAIN} → nonce-pipe:"
 else
-    warn "Could not insert virtual_transport row — see manual steps at end."
+    warn "Could not insert virtual_transport row — check MySQL permissions."
 fi
 
 # =============================================================================
