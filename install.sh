@@ -78,6 +78,8 @@ fi
 for cmd in python3 mysql postconf a2ensite a2enmod systemctl; do
     command -v "$cmd" >/dev/null || die "Required command not found: $cmd"
 done
+python3 -c "import ensurepip" 2>/dev/null \
+    || die "python3 ensurepip module missing.\n  Run: apt install python3-venv"
 
 # ── Parse and validate config ─────────────────────────────────────────────────
 DOMAIN=$(conf general domain)
@@ -177,7 +179,8 @@ ok "Files copied."
 
 # =============================================================================
 step "Python virtualenv  +  pip install"
-if [[ ! -d "$VENV" ]]; then
+if [[ ! -f "$VENV/bin/pip" ]]; then
+    [[ -d "$VENV" ]] && rm -rf "$VENV" && warn "Removed incomplete virtualenv, recreating."
     python3 -m venv "$VENV"
     ok "Virtualenv created: $VENV"
 else
