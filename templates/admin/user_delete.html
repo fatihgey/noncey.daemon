@@ -1,0 +1,17 @@
+{% extends 'admin/_base.html' %}
+{% block title %}noncey — delete user{% endblock %}
+{% block content %}
+
+<h1>Delete user</h1>
+
+<p>
+  Delete <strong>{{ user.username }}</strong>?
+  This permanently removes the user and all their providers, matchers, nonces, and sessions.
+</p>
+
+<form method="post">
+  <input class="btn btn-danger" type="submit" value="Yes, delete {{ user.username }}">
+  <a class="btn" href="{{ url_for('admin.dashboard') }}">Cancel</a>
+</form>
+
+{% endblock %}

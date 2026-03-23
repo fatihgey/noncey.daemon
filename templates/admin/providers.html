@@ -1,0 +1,53 @@
+{% extends 'admin/_base.html' %}
+{% block title %}noncey — providers for {{ user.username }}{% endblock %}
+{% block content %}
+
+<h1>Providers — {{ user.username }}</h1>
+
+{% if providers %}
+<table>
+  <thead>
+    <tr>
+      <th>Tag</th>
+      <th>Start marker</th>
+      <th>End marker</th>
+      <th>Matchers</th>
+      <th>Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for p in providers %}
+    <tr>
+      <td><strong>{{ p.tag }}</strong></td>
+      <td><code>{{ p.nonce_start_marker }}</code></td>
+      <td>
+        {% if p.nonce_end_marker %}
+          <code>{{ p.nonce_end_marker }}</code>
+        {% else %}
+          <span class="hint">end of line</span>
+        {% endif %}
+      </td>
+      <td>
+        {% set m_count = matchers[p.id]|length %}
+        {% if m_count == 0 %}
+          <span class="hint">none — inactive</span>
+        {% else %}
+          {{ m_count }}
+        {% endif %}
+      </td>
+      <td class="actions">
+        <a class="btn" href="{{ url_for('admin.provider_edit', user_id=user.id, provider_id=p.id) }}">Edit</a>
+        <a class="btn btn-danger" href="{{ url_for('admin.provider_delete', user_id=user.id, provider_id=p.id) }}">Delete</a>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="empty">No providers configured for this user.</p>
+{% endif %}
+
+<a class="btn btn-primary" href="{{ url_for('admin.provider_new', user_id=user.id) }}">+ New provider</a>
+<a class="btn" href="{{ url_for('admin.dashboard') }}">← Back</a>
+
+{% endblock %}

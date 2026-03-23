@@ -1,0 +1,23 @@
+[general]
+domain              = nonces.yourdomain.com
+admin_domain        = admin.yourdomain.com
+nonce_lifetime_h    = 2
+archive_retention_d = 30
+flask_port          = 5000
+# generate with: python3 -c "import secrets; print(secrets.token_hex(32))"
+secret_key          = CHANGE_ME
+
+[mysql]
+host      = localhost
+user      = postfix_ro
+password  = CHANGE_ME
+database  = postfix
+
+[tls]
+cert = /etc/ssl/noncey/fullchain.pem
+key  = /etc/ssl/noncey/privkey.pem
+
+[paths]
+install_dir  = /opt/noncey/daemon
+db_path      = /opt/noncey/daemon/var/noncey.db
+archive_path = /opt/noncey/daemon/var/archive

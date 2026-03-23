@@ -1,0 +1,26 @@
+{% extends 'admin/_base.html' %}
+{% block title %}noncey — new user{% endblock %}
+{% block content %}
+
+<h1>New user</h1>
+
+<form method="post" style="max-width: 480px;">
+  <div class="field">
+    <label for="username">Username</label>
+    <input type="text" id="username" name="username" required autofocus
+           autocomplete="off" spellcheck="false">
+    <p class="hint">Lowercase letters, digits, hyphens, underscores, dots. Max 64 chars.</p>
+  </div>
+  <div class="field">
+    <label for="password">Password</label>
+    <input type="password" id="password" name="password" required autocomplete="new-password">
+  </div>
+  <div class="field">
+    <label for="password2">Confirm password</label>
+    <input type="password" id="password2" name="password2" required autocomplete="new-password">
+  </div>
+  <input class="btn btn-primary" type="submit" value="Create user">
+  <a class="btn" href="{{ url_for('admin.dashboard') }}">Cancel</a>
+</form>
+
+{% endblock %}

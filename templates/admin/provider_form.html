@@ -1,0 +1,111 @@
+{% extends 'admin/_base.html' %}
+{% block title %}noncey —
+  {%- if provider %} edit {{ provider.tag }}{% else %} new provider{% endif %}
+{% endblock %}
+{% block content %}
+
+<h1>
+  {% if provider %}Edit provider — {{ provider.tag }}
+  {% else %}New provider — {{ user.username }}
+  {% endif %}
+</h1>
+
+<form method="post" style="max-width: 600px;">
+  <div class="field">
+    <label for="tag">Tag</label>
+    <input type="text" id="tag" name="tag"
+           value="{{ provider.tag if provider else '' }}"
+           required autofocus autocomplete="off" spellcheck="false">
+    <p class="hint">Short label used in the extension dropdown, e.g. <code>github</code>, <code>bank-otp</code>.</p>
+  </div>
+
+  <div class="field">
+    <label for="nonce_start_marker">Start marker</label>
+    <input type="text" id="nonce_start_marker" name="nonce_start_marker"
+           value="{{ provider.nonce_start_marker if provider else '' }}"
+           required autocomplete="off">
+    <p class="hint">Text that appears immediately before the OTP in the email body.</p>
+  </div>
+
+  <div class="field">
+    <label for="nonce_end_marker">End marker <small>(optional)</small></label>
+    <input type="text" id="nonce_end_marker" name="nonce_end_marker"
+           value="{{ provider.nonce_end_marker if provider else '' }}"
+           autocomplete="off">
+    <p class="hint">Text immediately after the OTP. Leave blank to read to end of line.</p>
+  </div>
+
+  <div class="field">
+    <label for="sample_email">Sample email <small>(optional)</small></label>
+    <textarea id="sample_email" name="sample_email"
+              spellcheck="false">{{ provider.sample_email if provider else '' }}</textarea>
+    <p class="hint">Paste a representative email for reference. Not used at runtime.</p>
+  </div>
+
+  <input class="btn btn-primary" type="submit"
+         value="{{ 'Save changes' if provider else 'Create provider' }}">
+  <a class="btn" href="{{ url_for('admin.provider_list', user_id=user.id) }}">Cancel</a>
+</form>
+
+{# Matchers section — only shown when editing an existing provider #}
+{% if provider %}
+<hr>
+
+<h2>Matchers</h2>
+<p class="hint">
+  An inbound email matches this provider if <em>any one</em> matcher fires.
+  A matcher fires when every condition it defines is satisfied
+  (sender AND subject pattern, if both are set).
+  A provider with no matchers will never capture nonces.
+</p>
+
+{% if matchers %}
+<table>
+  <thead>
+    <tr>
+      <th>Sender email</th>
+      <th>Subject pattern&nbsp;<small>(regex)</small></th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for m in matchers %}
+    <tr>
+      <td>{{ m.sender_email or '' }}<span class="hint">{{ '(any)' if not m.sender_email }}</span></td>
+      <td>{{ m.subject_pattern or '' }}<span class="hint">{{ '(any)' if not m.subject_pattern }}</span></td>
+      <td>
+        <form class="inline" method="post"
+              action="{{ url_for('admin.matcher_delete',
+                                 user_id=user.id,
+                                 provider_id=provider.id,
+                                 matcher_id=m.id) }}">
+          <button class="btn btn-danger" type="submit">Remove</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="empty">No matchers yet.</p>
+{% endif %}
+
+<h3>Add matcher</h3>
+<form method="post" style="max-width: 600px;"
+      action="{{ url_for('admin.matcher_new', user_id=user.id, provider_id=provider.id) }}">
+  <div class="field">
+    <label for="sender_email">Sender email <small>(optional)</small></label>
+    <input type="text" id="sender_email" name="sender_email"
+           placeholder="noreply@example.com" autocomplete="off" spellcheck="false">
+  </div>
+  <div class="field">
+    <label for="subject_pattern">Subject pattern <small>(regex, optional)</small></label>
+    <input type="text" id="subject_pattern" name="subject_pattern"
+           placeholder="Your verification code" autocomplete="off" spellcheck="false">
+    <p class="hint">Python <code>re.search</code> pattern, case-insensitive.</p>
+  </div>
+  <input class="btn btn-primary" type="submit" value="Add matcher">
+</form>
+
+{% endif %}{# end if provider #}
+{% endblock %}

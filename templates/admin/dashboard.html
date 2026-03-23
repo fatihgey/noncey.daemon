@@ -1,0 +1,40 @@
+{% extends 'admin/_base.html' %}
+{% block title %}noncey — users{% endblock %}
+{% block content %}
+
+<h1>Users</h1>
+
+{% if users %}
+<table>
+  <thead>
+    <tr>
+      <th>Username</th>
+      <th>Providers</th>
+      <th>Active nonces</th>
+      <th>Created</th>
+      <th>Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for u in users %}
+    <tr>
+      <td><strong>{{ u.username }}</strong></td>
+      <td>{{ u.provider_count }}</td>
+      <td>{{ u.active_nonce_count }}</td>
+      <td>{{ u.created_at[:10] }}</td>
+      <td class="actions">
+        <a class="btn" href="{{ url_for('admin.provider_list', user_id=u.id) }}">Providers</a>
+        <a class="btn" href="{{ url_for('admin.user_password', user_id=u.id) }}">Password</a>
+        <a class="btn btn-danger" href="{{ url_for('admin.user_delete', user_id=u.id) }}">Delete</a>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="empty">No users yet.</p>
+{% endif %}
+
+<a class="btn btn-primary" href="{{ url_for('admin.user_new') }}">+ New user</a>
+
+{% endblock %}
