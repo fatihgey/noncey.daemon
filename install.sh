@@ -174,6 +174,7 @@ cp -r "${SOURCE_DIR}"/. "${INSTALL_DIR}/"
 chown -R root:root "${INSTALL_DIR}"
 # var/ and etc/ ownership restored after the broad chown above
 chown  noncey:noncey "${VAR_DIR}"      "${ARCHIVE_PATH}"
+[[ -f "$DB_PATH" ]] && chown noncey:noncey "$DB_PATH"
 chown  root:noncey   "${ETC_DIR}"      "$CONF"
 ok "Files copied."
 
