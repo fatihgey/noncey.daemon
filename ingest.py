@@ -20,7 +20,7 @@ from datetime import datetime, timedelta, timezone
 from email import policy
 from pathlib import Path
 
-CONFIG_PATH = '/etc/noncey/noncey.conf'
+CONFIG_PATH = os.environ.get('NONCEY_CONF', '/etc/noncey/noncey.conf')
 
 
 # ── Config / DB helpers ──────────────────────────────────────────────────────
