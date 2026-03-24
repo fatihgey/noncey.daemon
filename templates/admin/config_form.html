@@ -1,0 +1,47 @@
+{% extends 'admin/_base.html' %}
+{% block title %}noncey — {% if config %}edit {{ config.name }}{% else %}new configuration{% endif %}{% endblock %}
+{% block content %}
+
+<h1>{% if config %}Edit configuration — {{ config.name }}{% else %}New configuration{% endif %}</h1>
+
+<form method="post" style="max-width:600px;">
+
+  <div class="field">
+    <label for="name">Name</label>
+    <input type="text" id="name" name="name" required autofocus autocomplete="off"
+           value="{{ config.name if config else '' }}"
+           placeholder="e.g. github-otp, work-email">
+    <p class="hint">Short identifier for this configuration.</p>
+  </div>
+
+  <div class="field">
+    <label for="version">Version</label>
+    <input type="text" id="version" name="version" required autocomplete="off"
+           value="{{ config.version if config else default_version }}"
+           placeholder="{{ default_version }}">
+    <p class="hint">Recommended format: <code>YYYYMM-NN</code> (e.g. <code>{{ default_version }}</code>).</p>
+  </div>
+
+  <div class="field">
+    <label for="description">Description <small>(optional)</small></label>
+    <textarea id="description" name="description" style="height:5rem;"
+              placeholder="What does this configuration do? Required before marketplace submission.">{{ config.description if config and config.description else '' }}</textarea>
+  </div>
+
+  <div class="field">
+    <label for="test_threshold">Test threshold</label>
+    <input type="number" id="test_threshold" name="test_threshold" min="1" max="100" style="width:6rem;"
+           value="{{ config.test_threshold if config else 3 }}">
+    <p class="hint">Number of successful nonce extractions required to advance status from <em>active</em> to <em>tested</em>.</p>
+  </div>
+
+  <input class="btn btn-primary" type="submit"
+         value="{{ 'Save changes' if config else 'Create configuration' }}">
+  {% if config %}
+  <a class="btn" href="{{ url_for('admin.config_detail', config_id=config.id) }}">Cancel</a>
+  {% else %}
+  <a class="btn" href="{{ url_for('admin.dashboard') }}">Cancel</a>
+  {% endif %}
+</form>
+
+{% endblock %}

@@ -5,13 +5,13 @@
 <h1>Delete provider</h1>
 
 <p>
-  Delete provider <strong>{{ provider.tag }}</strong> for <strong>{{ user.username }}</strong>?
+  Delete provider <strong>{{ provider.tag }}</strong> from configuration <strong>{{ config.name }}</strong>?
   All associated matchers and any stored nonces for this provider will also be deleted.
 </p>
 
 <form method="post">
   <input class="btn btn-danger" type="submit" value="Yes, delete {{ provider.tag }}">
-  <a class="btn" href="{{ url_for('admin.provider_list', user_id=user.id) }}">Cancel</a>
+  <a class="btn" href="{{ url_for('admin.config_detail', config_id=config.id) }}">Cancel</a>
 </form>
 
 {% endblock %}

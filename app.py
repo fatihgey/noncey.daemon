@@ -36,6 +36,7 @@ from provision import ProvisionError, validate_username
 
 app = Flask(__name__)
 app.secret_key = cfg('general', 'secret_key')   # also used for Flask session / flash
+app.permanent_session_lifetime = timedelta(days=30)
 app.register_blueprint(admin_bp)
 
 # ── Database teardown ─────────────────────────────────────────────────────────
@@ -186,9 +187,10 @@ def list_nonces():
 
     rows = db.execute(
         "SELECT n.id, p.tag AS provider_tag, n.nonce_value, "
-        "       n.received_at, n.expires_at "
+        "       n.received_at, n.expires_at, c.name AS configuration_name "
         "FROM   nonces n "
         "JOIN   providers p ON p.id = n.provider_id "
+        "LEFT JOIN configurations c ON c.id = p.config_id "
         "WHERE  n.user_id = ? "
         "ORDER  BY n.received_at DESC",
         (g.user_id,)
@@ -200,12 +202,13 @@ def list_nonces():
         if received_at.tzinfo is None:
             received_at = received_at.replace(tzinfo=timezone.utc)
         result.append({
-            'id':           row['id'],
-            'provider_tag': row['provider_tag'],
-            'nonce_value':  row['nonce_value'],
-            'received_at':  row['received_at'],
-            'expires_at':   row['expires_at'],
-            'age_seconds':  int((now - received_at).total_seconds()),
+            'id':                 row['id'],
+            'provider_tag':       row['provider_tag'],
+            'configuration_name': row['configuration_name'],
+            'nonce_value':        row['nonce_value'],
+            'received_at':        row['received_at'],
+            'expires_at':         row['expires_at'],
+            'age_seconds':        int((now - received_at).total_seconds()),
         })
 
     return jsonify(result), 200

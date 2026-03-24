@@ -1,11 +1,11 @@
 {% extends 'admin/_base.html' %}
-{% block title %}noncey — unmatched emails — {{ user.username }}{% endblock %}
+{% block title %}noncey — unmatched emails{% endblock %}
 {% block content %}
 
-<h1>Unmatched emails — {{ user.username }}</h1>
+<h1>Unmatched emails</h1>
 <p class="hint">
-  These emails were delivered to <code>nonce-{{ user.username }}@…</code> but matched no
-  configured provider. Inspect an email to create a provider from it, or dismiss it.
+  These emails were delivered to your nonce address but matched no configured provider.
+  Inspect an email to create a provider from it, or dismiss it.
 </p>
 
 {% if emails %}
@@ -37,7 +37,7 @@
   </tbody>
 </table>
 {% else %}
-<p class="empty">No unmatched emails for this user.</p>
+<p class="empty">No unmatched emails.</p>
 {% endif %}
 
 <a class="btn" href="{{ url_for('admin.dashboard') }}">← Back</a>

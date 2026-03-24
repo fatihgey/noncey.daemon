@@ -1,0 +1,50 @@
+{% extends 'admin/_base.html' %}
+{% block title %}noncey — marketplace review queue{% endblock %}
+{% block content %}
+
+<h1>Marketplace review queue</h1>
+
+{% if configs %}
+<p>The following configurations have been submitted for public marketplace listing.</p>
+<table>
+  <thead>
+    <tr>
+      <th>Name</th>
+      <th>Version</th>
+      <th>Owner</th>
+      <th>Description</th>
+      <th>Submitted</th>
+      <th>Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for c in configs %}
+    <tr>
+      <td><strong>{{ c.name }}</strong></td>
+      <td>{{ c.version }}</td>
+      <td>{{ c.owner_name }}</td>
+      <td>{{ c.description or '' }}</td>
+      <td>{{ c.updated_at[:16] }}</td>
+      <td class="actions">
+        <form class="inline" method="post"
+              action="{{ url_for('admin.admin_marketplace_approve', config_id=c.id) }}">
+          <button class="btn btn-success" type="submit">Approve</button>
+        </form>
+        <form class="inline" method="post"
+              action="{{ url_for('admin.admin_marketplace_reject', config_id=c.id) }}"
+              onsubmit="var n=prompt('Rejection note (optional):');
+                        if(n===null) return false;
+                        this.querySelector('[name=note]').value=n; return true;">
+          <input type="hidden" name="note" value="">
+          <button class="btn btn-danger" type="submit">Reject</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="empty">No configurations pending review.</p>
+{% endif %}
+
+{% endblock %}

@@ -1,0 +1,15 @@
+{% extends 'admin/_base.html' %}
+{% block title %}noncey — delete {{ config.name }}{% endblock %}
+{% block content %}
+
+<h1>Delete configuration</h1>
+
+<p>Are you sure you want to delete <strong>{{ config.name }}</strong> v{{ config.version }}?
+This will also delete all providers and matchers belonging to it. This cannot be undone.</p>
+
+<form method="post" style="display:flex;gap:.5rem;">
+  <button class="btn btn-danger" type="submit">Delete</button>
+  <a class="btn" href="{{ url_for('admin.config_detail', config_id=config.id) }}">Cancel</a>
+</form>
+
+{% endblock %}

@@ -210,11 +210,18 @@ def find_matching_provider(conn, user_id: int, sender_addr: str, subject: str):
     """
     Return the first providers row whose matchers match sender + subject,
     or None if no match.
+
+    A provider is considered active if:
+    - it has no config_id (unassigned / always active), OR
+    - its configuration's status is 'active', 'tested', or 'public'.
     """
     providers = conn.execute(
-        "SELECT id, extract_source, extract_mode, "
-        "       nonce_start_marker, nonce_end_marker, nonce_length "
-        "FROM providers WHERE user_id = ?",
+        "SELECT p.id, p.config_id, p.extract_source, p.extract_mode, "
+        "       p.nonce_start_marker, p.nonce_end_marker, p.nonce_length "
+        "FROM providers p "
+        "LEFT JOIN configurations c ON c.id = p.config_id "
+        "WHERE p.user_id = ? "
+        "  AND (p.config_id IS NULL OR c.status IN ('active', 'tested', 'public'))",
         (user_id,)
     ).fetchall()
 
@@ -331,6 +338,22 @@ def main():
                 (user_id, provider['id'], nonce,
                  now.isoformat(), expires_at.isoformat())
             )
+            # Increment test_count on the owning configuration and advance to
+            # 'tested' automatically once the threshold is reached.
+            if provider['config_id']:
+                conn.execute(
+                    "UPDATE configurations "
+                    "SET test_count = test_count + 1, updated_at = ? "
+                    "WHERE id = ? AND status = 'active'",
+                    (now.isoformat(), provider['config_id'])
+                )
+                conn.execute(
+                    "UPDATE configurations "
+                    "SET status = 'tested', updated_at = ? "
+                    "WHERE id = ? AND status = 'active' "
+                    "  AND test_count >= test_threshold",
+                    (now.isoformat(), provider['config_id'])
+                )
 
         archive_email(archive_root, username, raw_bytes)
 

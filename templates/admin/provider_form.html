@@ -1,12 +1,10 @@
 {% extends 'admin/_base.html' %}
-{% block title %}noncey —
-  {%- if provider %} edit {{ provider.tag }}{% else %} new provider{% endif %}
-{% endblock %}
+{% block title %}noncey — {% if provider %}edit {{ provider.tag }}{% else %}new provider{% endif %}{% endblock %}
 {% block content %}
 
 <h1>
   {% if provider %}Edit provider — {{ provider.tag }}
-  {% else %}New provider — {{ user.username }}
+  {% else %}New provider — {{ config.name }}
   {% endif %}
 </h1>
 
@@ -95,7 +93,7 @@
 
   <input class="btn btn-primary" type="submit"
          value="{{ 'Save changes' if provider else 'Create provider' }}">
-  <a class="btn" href="{{ url_for('admin.provider_list', user_id=user.id) }}">Cancel</a>
+  <a class="btn" href="{{ url_for('admin.config_detail', config_id=config.id) }}">Cancel</a>
 </form>
 
 {# Matchers section — only shown when editing an existing provider #}
@@ -127,7 +125,7 @@
       <td>
         <form class="inline" method="post"
               action="{{ url_for('admin.matcher_delete',
-                                 user_id=user.id,
+                                 config_id=config.id,
                                  provider_id=provider.id,
                                  matcher_id=m.id) }}">
           <button class="btn btn-danger" type="submit">Remove</button>
@@ -143,7 +141,7 @@
 
 <h3>Add matcher</h3>
 <form method="post" style="max-width: 600px;"
-      action="{{ url_for('admin.matcher_new', user_id=user.id, provider_id=provider.id) }}">
+      action="{{ url_for('admin.matcher_new', config_id=config.id, provider_id=provider.id) }}">
 
   <div class="field">
     <label>Sender</label>

@@ -214,6 +214,7 @@ for col, sql in [
     ("extract_source", "ALTER TABLE providers ADD COLUMN extract_source TEXT NOT NULL DEFAULT 'body'"),
     ("extract_mode",   "ALTER TABLE providers ADD COLUMN extract_mode   TEXT NOT NULL DEFAULT 'auto'"),
     ("nonce_length",   "ALTER TABLE providers ADD COLUMN nonce_length   INTEGER"),
+    ("config_id",      "ALTER TABLE providers ADD COLUMN config_id INTEGER REFERENCES configurations(id) ON DELETE SET NULL"),
 ]:
     if col not in cols:
         db.execute(sql)
@@ -221,6 +222,14 @@ for col, sql in [
 ucols = {r[1] for r in db.execute("PRAGMA table_info(unmatched_emails)").fetchall()}
 for col, sql in [
     ("fwd_sender", "ALTER TABLE unmatched_emails ADD COLUMN fwd_sender TEXT"),
+]:
+    if col not in ucols:
+        db.execute(sql)
+
+ucols = {r[1] for r in db.execute("PRAGMA table_info(users)").fetchall()}
+for col, sql in [
+    ("email",    "ALTER TABLE users ADD COLUMN email    TEXT DEFAULT NULL"),
+    ("is_admin", "ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0"),
 ]:
     if col not in ucols:
         db.execute(sql)

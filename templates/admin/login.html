@@ -1,0 +1,25 @@
+{% extends 'admin/_base.html' %}
+{% block title %}noncey — log in{% endblock %}
+{% block content %}
+
+<div style="max-width:380px;margin:3rem auto;">
+  <h1 style="text-align:center;margin-bottom:1.5rem;">noncey</h1>
+
+  <form method="post" style="background:#fff;padding:1.5rem;border:1px solid #ddd;border-radius:6px;">
+    <input type="hidden" name="next" value="{{ next }}">
+
+    <div class="field">
+      <label for="username">Username</label>
+      <input type="text" id="username" name="username" required autofocus autocomplete="username">
+    </div>
+
+    <div class="field">
+      <label for="password">Password</label>
+      <input type="password" id="password" name="password" required autocomplete="current-password">
+    </div>
+
+    <input class="btn btn-primary" type="submit" value="Log in" style="width:100%;">
+  </form>
+</div>
+
+{% endblock %}

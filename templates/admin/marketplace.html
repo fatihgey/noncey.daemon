@@ -1,0 +1,46 @@
+{% extends 'admin/_base.html' %}
+{% block title %}noncey — marketplace{% endblock %}
+{% block content %}
+
+<h1>Marketplace</h1>
+<p class="hint">Public configurations shared by the community. Subscribe to copy a configuration's providers to your account.</p>
+
+{% if configs %}
+<table>
+  <thead>
+    <tr>
+      <th>Name</th>
+      <th>Version</th>
+      <th>Owner</th>
+      <th>Description</th>
+      <th>Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for c in configs %}
+    <tr>
+      <td><strong>{{ c.name }}</strong></td>
+      <td>{{ c.version }}</td>
+      <td>{{ c.owner_name }}</td>
+      <td>{{ c.description or '' }}</td>
+      <td class="actions">
+        {% if c.id in subscribed %}
+          <span style="color:#155724;">✓ Subscribed</span>
+        {% elif c.owner_id == current_user.id %}
+          <span style="color:#888;">Your config</span>
+        {% else %}
+          <form class="inline" method="post"
+                action="{{ url_for('admin.marketplace_subscribe', src_config_id=c.id) }}">
+            <button class="btn btn-primary" type="submit">Subscribe</button>
+          </form>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="empty">No public configurations yet.</p>
+{% endif %}
+
+{% endblock %}

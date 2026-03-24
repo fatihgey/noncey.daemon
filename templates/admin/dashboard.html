@@ -1,48 +1,70 @@
 {% extends 'admin/_base.html' %}
-{% block title %}noncey — users{% endblock %}
+{% block title %}noncey — dashboard{% endblock %}
 {% block content %}
 
-<h1>Users</h1>
+<h1>Dashboard</h1>
 
-{% if users %}
+{% if unmatched_count %}
+<div class="flash info">
+  You have <a href="{{ url_for('admin.unmatched_list') }}"><strong>{{ unmatched_count }} unmatched email{{ 's' if unmatched_count != 1 }}</strong></a> waiting for provider setup.
+</div>
+{% endif %}
+
+<div style="display:flex;gap:.75rem;margin-bottom:1.25rem;flex-wrap:wrap;align-items:center;">
+  <a class="btn btn-primary" href="{{ url_for('admin.config_new') }}">+ New configuration</a>
+  <a class="btn" href="{{ url_for('admin.account_gmail_xml') }}">Download Gmail filters</a>
+</div>
+
+{% if configs %}
 <table>
   <thead>
     <tr>
-      <th>Username</th>
+      <th>Name</th>
+      <th>Version</th>
+      <th>Status</th>
       <th>Providers</th>
-      <th>Active nonces</th>
-      <th>Unmatched</th>
-      <th>Created</th>
+      <th>Tests</th>
+      <th>Updated</th>
       <th>Actions</th>
     </tr>
   </thead>
   <tbody>
-    {% for u in users %}
+    {% for c in configs %}
     <tr>
-      <td><strong>{{ u.username }}</strong></td>
-      <td>{{ u.provider_count }}</td>
-      <td>{{ u.active_nonce_count }}</td>
       <td>
-        {% if u.unmatched_count %}
-          <a href="{{ url_for('admin.unmatched_list', user_id=u.id) }}">{{ u.unmatched_count }}</a>
-        {% else %}
-          0
+        <a href="{{ url_for('admin.config_detail', config_id=c.id) }}"><strong>{{ c.name }}</strong></a>
+        {% if c.source_config_id %}
+          <span style="color:#888;font-size:.8rem;">(subscribed)</span>
         {% endif %}
       </td>
-      <td>{{ u.created_at[:10] }}</td>
+      <td>{{ c.version }}</td>
+      <td><span class="badge badge-{{ c.status }}">{{ c.status.replace('_', ' ') }}</span></td>
+      <td>{{ c.provider_count }}</td>
+      <td>
+        {% if c.status in ('active',) %}
+          {{ c.test_count }}/{{ c.test_threshold }}
+        {% else %}
+          —
+        {% endif %}
+      </td>
+      <td>{{ c.updated_at[:16] }}</td>
       <td class="actions">
-        <a class="btn" href="{{ url_for('admin.provider_list', user_id=u.id) }}">Providers</a>
-        <a class="btn" href="{{ url_for('admin.user_password', user_id=u.id) }}">Password</a>
-        <a class="btn btn-danger" href="{{ url_for('admin.user_delete', user_id=u.id) }}">Delete</a>
+        <a class="btn" href="{{ url_for('admin.config_detail', config_id=c.id) }}">Open</a>
+        {% if c.id in update_available %}
+          <form class="inline" method="post"
+                action="{{ url_for('admin.marketplace_update',
+                                   src_config_id=update_available[c.id],
+                                   local_config_id=c.id) }}">
+            <button class="btn btn-warning" type="submit">Update available</button>
+          </form>
+        {% endif %}
       </td>
     </tr>
     {% endfor %}
   </tbody>
 </table>
 {% else %}
-<p class="empty">No users yet.</p>
+<p class="empty">No configurations yet. <a href="{{ url_for('admin.config_new') }}">Create one</a> or browse the <a href="{{ url_for('admin.marketplace_browse') }}">marketplace</a>.</p>
 {% endif %}
-
-<a class="btn btn-primary" href="{{ url_for('admin.user_new') }}">+ New user</a>
 
 {% endblock %}

@@ -1,0 +1,35 @@
+{% extends 'admin/_base.html' %}
+{% block title %}noncey — account{% endblock %}
+{% block content %}
+
+<h1>Account</h1>
+
+<h2>Change password</h2>
+<form method="post" style="max-width:400px;">
+
+  <div class="field">
+    <label for="current_password">Current password</label>
+    <input type="password" id="current_password" name="current_password" required autocomplete="current-password">
+  </div>
+
+  <div class="field">
+    <label for="password">New password</label>
+    <input type="password" id="password" name="password" required autocomplete="new-password">
+  </div>
+
+  <div class="field">
+    <label for="password2">Confirm new password</label>
+    <input type="password" id="password2" name="password2" required autocomplete="new-password">
+  </div>
+
+  <input class="btn btn-primary" type="submit" value="Change password">
+</form>
+
+<hr>
+
+<h2>Gmail filter export</h2>
+<p>Download a Gmail filter file that automatically forwards OTP emails to your nonce address.</p>
+<a class="btn btn-success" href="{{ url_for('admin.account_gmail_xml') }}">Download gmail_filters.xml</a>
+<p class="hint">Import in Gmail: Settings → Filters and Blocked Addresses → Import filters.</p>
+
+{% endblock %}

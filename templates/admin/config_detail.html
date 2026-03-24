@@ -1,0 +1,119 @@
+{% extends 'admin/_base.html' %}
+{% block title %}noncey — {{ config.name }} v{{ config.version }}{% endblock %}
+{% block content %}
+
+<div style="display:flex;align-items:baseline;gap:1rem;flex-wrap:wrap;margin-bottom:.5rem;">
+  <h1 style="margin:0;">{{ config.name }} <small style="font-weight:400;color:#666;">v{{ config.version }}</small></h1>
+  <span class="badge badge-{{ config.status }}">{{ config.status.replace('_', ' ') }}</span>
+</div>
+
+{% if source_config %}
+<p style="color:#666;font-size:.875rem;margin-bottom:1rem;">
+  Subscribed from <strong>{{ source_config.owner }}</strong> /
+  {{ source_config.name }} v{{ source_config.version }}
+</p>
+{% endif %}
+
+{% if config.description %}
+<p style="color:#444;margin-bottom:1rem;">{{ config.description }}</p>
+{% endif %}
+
+{# ── Lifecycle controls ── #}
+<div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:1.5rem;">
+  <a class="btn" href="{{ url_for('admin.config_edit', config_id=config.id) }}">Edit</a>
+
+  {% if config.status == 'draft' %}
+    <form class="inline" method="post"
+          action="{{ url_for('admin.config_activate', config_id=config.id) }}">
+      <button class="btn btn-success" type="submit"
+              {% if not activatable %}disabled title="Add a provider with a matcher first"{% endif %}>
+        Activate
+      </button>
+    </form>
+  {% elif config.status == 'active' %}
+    <form class="inline" method="post"
+          action="{{ url_for('admin.config_activate', config_id=config.id) }}">
+      <button class="btn" type="submit">Deactivate</button>
+    </form>
+    <span style="color:#888;font-size:.85rem;padding:.4rem 0;">
+      Testing: {{ config.test_count }}/{{ config.test_threshold }} extractions
+    </span>
+  {% elif config.status == 'tested' %}
+    <form class="inline" method="post"
+          action="{{ url_for('admin.config_submit', config_id=config.id) }}">
+      <button class="btn btn-primary" type="submit">Submit for marketplace review</button>
+    </form>
+  {% elif config.status == 'pending_review' %}
+    <span style="color:#856404;font-size:.875rem;padding:.4rem 0;">Awaiting admin review</span>
+  {% elif config.status == 'public' %}
+    <span style="color:#0c5460;font-size:.875rem;padding:.4rem 0;">Published in marketplace</span>
+  {% endif %}
+
+  <a class="btn btn-danger" href="{{ url_for('admin.config_delete', config_id=config.id) }}">Delete</a>
+</div>
+
+{% if config.status == 'tested' and not config.description %}
+<div class="flash error">A description is required before submitting for marketplace review. <a href="{{ url_for('admin.config_edit', config_id=config.id) }}">Add one now.</a></div>
+{% endif %}
+
+<hr>
+
+{# ── Providers ── #}
+<div style="display:flex;align-items:center;gap:1rem;margin-bottom:.75rem;">
+  <h2 style="margin:0;">Providers</h2>
+  {% if config.status in ('draft', 'active') %}
+  <a class="btn" href="{{ url_for('admin.provider_new', config_id=config.id) }}">+ Add provider</a>
+  {% endif %}
+</div>
+
+{% if providers %}
+<table>
+  <thead>
+    <tr>
+      <th>Tag</th>
+      <th>Source</th>
+      <th>Mode</th>
+      <th>Matchers</th>
+      <th>Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for p in providers %}
+    <tr>
+      <td><strong>{{ p.tag }}</strong></td>
+      <td>{{ p.extract_source }}</td>
+      <td>{{ p.extract_mode }}</td>
+      <td>
+        {% set m_list = matchers.get(p.id, []) %}
+        {% if m_list %}
+          {{ m_list | length }} matcher{{ 's' if m_list | length != 1 }}
+        {% else %}
+          <span style="color:#c82333;">none</span>
+        {% endif %}
+      </td>
+      <td class="actions">
+        <a class="btn" href="{{ url_for('admin.provider_edit', config_id=config.id, provider_id=p.id) }}">Edit</a>
+        {% if config.status in ('draft', 'active') %}
+        <a class="btn btn-danger"
+           href="{{ url_for('admin.provider_delete', config_id=config.id, provider_id=p.id) }}">Delete</a>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="empty">No providers yet. <a href="{{ url_for('admin.provider_new', config_id=config.id) }}">Add one.</a></p>
+{% endif %}
+
+{% if not activatable and config.status == 'draft' %}
+<p class="hint" style="color:#c82333;">At least one provider with a matcher is required to activate this configuration.</p>
+{% endif %}
+
+<hr>
+
+<div style="display:flex;gap:.5rem;">
+  <a class="btn" href="{{ url_for('admin.dashboard') }}">← Dashboard</a>
+</div>
+
+{% endblock %}

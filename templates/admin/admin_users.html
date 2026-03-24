@@ -1,0 +1,43 @@
+{% extends 'admin/_base.html' %}
+{% block title %}noncey — users{% endblock %}
+{% block content %}
+
+<h1>Users</h1>
+
+<a class="btn btn-primary" href="{{ url_for('admin.admin_user_new') }}" style="margin-bottom:1rem;display:inline-block;">+ New user</a>
+
+{% if users %}
+<table>
+  <thead>
+    <tr>
+      <th>Username</th>
+      <th>Email</th>
+      <th>Admin</th>
+      <th>Configs</th>
+      <th>Created</th>
+      <th>Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for u in users %}
+    <tr>
+      <td><strong>{{ u.username }}</strong></td>
+      <td>{{ u.email or '' }}</td>
+      <td>{% if u.is_admin %}✓{% endif %}</td>
+      <td>{{ u.config_count }}</td>
+      <td>{{ u.created_at[:10] }}</td>
+      <td class="actions">
+        <a class="btn" href="{{ url_for('admin.admin_user_edit', user_id=u.id) }}">Edit</a>
+        {% if u.id != current_user.id %}
+        <a class="btn btn-danger" href="{{ url_for('admin.admin_user_delete', user_id=u.id) }}">Delete</a>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="empty">No users.</p>
+{% endif %}
+
+{% endblock %}

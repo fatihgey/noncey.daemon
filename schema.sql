@@ -1,13 +1,34 @@
 CREATE TABLE IF NOT EXISTS users (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    username     TEXT    NOT NULL UNIQUE,
-    password_hash TEXT   NOT NULL,
-    created_at   TEXT    NOT NULL DEFAULT (datetime('now'))
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    username      TEXT    NOT NULL UNIQUE,
+    password_hash TEXT    NOT NULL,
+    email         TEXT    DEFAULT NULL,
+    is_admin      INTEGER NOT NULL DEFAULT 0,
+    created_at    TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS configurations (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    owner_id         INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name             TEXT    NOT NULL,
+    version          TEXT    NOT NULL,
+    description      TEXT    DEFAULT NULL,
+    status           TEXT    NOT NULL DEFAULT 'draft',
+    -- draft | active | tested | pending_review | public
+    source_config_id INTEGER REFERENCES configurations(id) ON DELETE SET NULL,
+    -- non-null = this is a subscribed/copied configuration
+    prompt_assigned  INTEGER NOT NULL DEFAULT 0,
+    test_threshold   INTEGER NOT NULL DEFAULT 3,
+    test_count       INTEGER NOT NULL DEFAULT 0,
+    created_at       TEXT    NOT NULL DEFAULT (datetime('now')),
+    updated_at       TEXT    NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(owner_id, name, version)
 );
 
 CREATE TABLE IF NOT EXISTS providers (
     id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id             INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    user_id             INTEGER NOT NULL REFERENCES users(id)         ON DELETE CASCADE,
+    config_id           INTEGER          REFERENCES configurations(id) ON DELETE SET NULL,
     tag                 TEXT    NOT NULL,
     extract_source      TEXT    NOT NULL DEFAULT 'body',
     extract_mode        TEXT    NOT NULL DEFAULT 'auto',
@@ -53,7 +74,19 @@ CREATE TABLE IF NOT EXISTS unmatched_emails (
     received_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
-CREATE INDEX IF NOT EXISTS idx_nonces_user_expires   ON nonces(user_id, expires_at);
-CREATE INDEX IF NOT EXISTS idx_sessions_token_hash   ON sessions(token_hash);
-CREATE INDEX IF NOT EXISTS idx_sessions_user         ON sessions(user_id);
-CREATE INDEX IF NOT EXISTS idx_unmatched_user        ON unmatched_emails(user_id, received_at);
+CREATE TABLE IF NOT EXISTS marketplace_reviews (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    config_id   INTEGER NOT NULL REFERENCES configurations(id) ON DELETE CASCADE,
+    reviewer_id INTEGER          REFERENCES users(id) ON DELETE SET NULL,
+    decision    TEXT    NOT NULL,  -- 'approved' | 'rejected'
+    note        TEXT    DEFAULT NULL,
+    reviewed_at TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_nonces_user_expires    ON nonces(user_id, expires_at);
+CREATE INDEX IF NOT EXISTS idx_sessions_token_hash    ON sessions(token_hash);
+CREATE INDEX IF NOT EXISTS idx_sessions_user          ON sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_unmatched_user         ON unmatched_emails(user_id, received_at);
+CREATE INDEX IF NOT EXISTS idx_providers_config       ON providers(config_id);
+CREATE INDEX IF NOT EXISTS idx_configs_owner          ON configurations(owner_id);
+CREATE INDEX IF NOT EXISTS idx_configs_status         ON configurations(status);

@@ -1,0 +1,15 @@
+{% extends 'admin/_base.html' %}
+{% block title %}noncey — delete {{ user.username }}{% endblock %}
+{% block content %}
+
+<h1>Delete user</h1>
+
+<p>Are you sure you want to delete <strong>{{ user.username }}</strong>?
+This will permanently remove the user and all their configurations, providers, and nonce history.</p>
+
+<form method="post" style="display:flex;gap:.5rem;">
+  <button class="btn btn-danger" type="submit">Delete {{ user.username }}</button>
+  <a class="btn" href="{{ url_for('admin.admin_users') }}">Cancel</a>
+</form>
+
+{% endblock %}
