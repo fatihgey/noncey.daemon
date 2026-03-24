@@ -11,6 +11,7 @@
       <th>Username</th>
       <th>Providers</th>
       <th>Active nonces</th>
+      <th>Unmatched</th>
       <th>Created</th>
       <th>Actions</th>
     </tr>
@@ -21,6 +22,13 @@
       <td><strong>{{ u.username }}</strong></td>
       <td>{{ u.provider_count }}</td>
       <td>{{ u.active_nonce_count }}</td>
+      <td>
+        {% if u.unmatched_count %}
+          <a href="{{ url_for('admin.unmatched_list') }}">{{ u.unmatched_count }}</a>
+        {% else %}
+          0
+        {% endif %}
+      </td>
       <td>{{ u.created_at[:10] }}</td>
       <td class="actions">
         <a class="btn" href="{{ url_for('admin.provider_list', user_id=u.id) }}">Providers</a>

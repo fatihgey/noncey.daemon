@@ -1,0 +1,138 @@
+{% extends 'admin/_base.html' %}
+{% block title %}noncey — unmatched email #{{ row.id }}{% endblock %}
+{% block content %}
+
+<h1>Unmatched email — {{ row.username }}</h1>
+
+<table style="max-width:600px;margin-bottom:1.5rem;">
+  <tr><th style="width:6rem;">From</th><td>{{ row.sender or '(unknown)' }}</td></tr>
+  <tr><th>Subject</th><td>{{ row.subject or '(no subject)' }}</td></tr>
+  <tr><th>Received</th><td>{{ row.received_at[:16] }}</td></tr>
+</table>
+
+<h2>Email body</h2>
+<pre id="body-text" style="background:#f7f7f7;border:1px solid #ddd;padding:.75rem 1rem;
+     overflow:auto;max-height:20rem;font-size:.82rem;white-space:pre-wrap;word-break:break-all;">{{ row.body_text or '(empty)' }}</pre>
+
+<hr>
+
+<h2>Create provider from this email</h2>
+
+<form method="post" style="max-width:600px;">
+  <input type="hidden" name="action" value="promote">
+
+  <div class="field">
+    <label>Step 1 — identify the nonce</label>
+    <p class="hint">Type the OTP/code you can see in the body above, then click Detect.</p>
+    <div style="display:flex;gap:.5rem;">
+      <input type="text" id="nonce-detect" placeholder="e.g. 483921"
+             autocomplete="off" spellcheck="false" style="flex:1;">
+      <button type="button" class="btn" onclick="detectMarkers()">Detect markers</button>
+    </div>
+  </div>
+
+  <div class="field">
+    <label for="tag">Provider tag</label>
+    <input type="text" id="tag" name="tag" required autocomplete="off" spellcheck="false"
+           placeholder="e.g. github, bank-otp">
+    <p class="hint">Short label used in the extension dropdown.</p>
+  </div>
+
+  <div class="field">
+    <label for="nonce_start_marker">Start marker</label>
+    <input type="text" id="nonce_start_marker" name="nonce_start_marker"
+           required autocomplete="off" spellcheck="false">
+    <p class="hint">Text immediately before the OTP in the email body.</p>
+  </div>
+
+  <div class="field">
+    <label for="nonce_end_marker">End marker <small>(optional)</small></label>
+    <input type="text" id="nonce_end_marker" name="nonce_end_marker"
+           autocomplete="off" spellcheck="false">
+    <p class="hint">Text immediately after the OTP. Leave blank to read to end of line.</p>
+  </div>
+
+  <div class="field">
+    <label>Sender</label>
+    {% if row.sender %}
+    <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;margin-bottom:.35rem;">
+      <input type="radio" name="sender_mode" value="sample" checked>
+      Use sender from this email — <code>{{ row.sender }}</code>
+    </label>
+    {% endif %}
+    <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;margin-bottom:.35rem;">
+      <input type="radio" name="sender_mode" value="any" {{ 'checked' if not row.sender }}>
+      Any sender
+    </label>
+    <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;margin-bottom:.35rem;">
+      <input type="radio" name="sender_mode" value="custom" id="sender-custom-radio">
+      Custom:
+      <input type="text" name="sender_custom" placeholder="noreply@example.com"
+             autocomplete="off" spellcheck="false" style="width:auto;flex:1;"
+             onfocus="document.getElementById('sender-custom-radio').checked=true">
+    </label>
+  </div>
+
+  <div class="field">
+    <label>Subject</label>
+    <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;margin-bottom:.35rem;">
+      <input type="radio" name="subject_mode" value="any" checked>
+      Any (ignore subject)
+    </label>
+    {% if row.subject %}
+    <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;margin-bottom:.35rem;">
+      <input type="radio" name="subject_mode" value="contains" id="subject-contains-radio">
+      Contains text:
+      <input type="text" name="subject_text" value="{{ row.subject }}"
+             autocomplete="off" spellcheck="false" style="width:auto;flex:1;"
+             onfocus="document.getElementById('subject-contains-radio').checked=true">
+    </label>
+    {% else %}
+    <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;margin-bottom:.35rem;">
+      <input type="radio" name="subject_mode" value="contains" id="subject-contains-radio">
+      Contains text:
+      <input type="text" name="subject_text" placeholder="Your verification code"
+             autocomplete="off" spellcheck="false" style="width:auto;flex:1;"
+             onfocus="document.getElementById('subject-contains-radio').checked=true">
+    </label>
+    {% endif %}
+    <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;margin-bottom:.35rem;">
+      <input type="radio" name="subject_mode" value="regex" id="subject-regex-radio">
+      Custom regex:
+      <input type="text" name="subject_regex" placeholder="verification.code|one.time"
+             autocomplete="off" spellcheck="false" style="width:auto;flex:1;"
+             onfocus="document.getElementById('subject-regex-radio').checked=true">
+    </label>
+    <p class="hint">Regex examples: <code>verify</code> · <code>code|otp</code> · <code>^\[GitHub\]</code></p>
+  </div>
+
+  <input class="btn btn-primary" type="submit" value="Create provider">
+</form>
+
+<hr>
+
+<form method="post" action="{{ url_for('admin.unmatched_dismiss', email_id=row.id) }}">
+  <button class="btn btn-danger" type="submit"
+          onclick="return confirm('Dismiss this email without creating a provider?')">Dismiss</button>
+  <a class="btn" href="{{ url_for('admin.unmatched_list') }}">← Back</a>
+</form>
+
+<script>
+function detectMarkers() {
+  var body   = document.getElementById('body-text').textContent;
+  var nonce  = document.getElementById('nonce-detect').value.trim();
+  if (!nonce) { alert('Enter the nonce value first.'); return; }
+  var idx = body.indexOf(nonce);
+  if (idx === -1) { alert('Nonce value not found in the email body.'); return; }
+  var before     = body.substring(0, idx);
+  var lineStart  = before.lastIndexOf('\n') + 1;
+  var startMarker = before.substring(lineStart);
+  var after      = body.substring(idx + nonce.length);
+  var lineEnd    = after.indexOf('\n');
+  var endMarker  = lineEnd === -1 ? '' : after.substring(0, lineEnd).trim();
+  document.getElementById('nonce_start_marker').value = startMarker;
+  document.getElementById('nonce_end_marker').value   = endMarker;
+}
+</script>
+
+{% endblock %}

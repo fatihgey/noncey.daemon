@@ -85,6 +85,7 @@
   <nav>
     <a class="brand" href="{{ url_for('admin.dashboard') }}">noncey</a>
     <a href="{{ url_for('admin.dashboard') }}">Users</a>
+    <a href="{{ url_for('admin.unmatched_list') }}">Unmatched</a>
   </nav>
   {% for category, message in get_flashed_messages(with_categories=true) %}
     <div class="flash {{ category }}">{{ message }}</div>

@@ -4,7 +4,9 @@ Served under /noncey/ via the admin Apache2 VirtualHost.
 Apache handles authentication; no auth layer is added here.
 """
 
+import re
 import sqlite3
+from email.utils import parseaddr
 
 import bcrypt
 from flask import Blueprint, flash, redirect, render_template, request, url_for
@@ -41,12 +43,14 @@ def _get_provider(provider_id: int, user_id: int):
 def dashboard():
     users = get_db().execute(
         "SELECT u.id, u.username, u.created_at, "
-        "       COUNT(DISTINCT p.id)  AS provider_count, "
-        "       COUNT(DISTINCT n.id)  AS active_nonce_count "
+        "       COUNT(DISTINCT p.id)   AS provider_count, "
+        "       COUNT(DISTINCT n.id)   AS active_nonce_count, "
+        "       COUNT(DISTINCT um.id)  AS unmatched_count "
         "FROM   users u "
-        "LEFT JOIN providers p ON p.user_id = u.id "
-        "LEFT JOIN nonces n    ON n.user_id = u.id "
-        "                      AND n.expires_at > datetime('now') "
+        "LEFT JOIN providers p       ON p.user_id  = u.id "
+        "LEFT JOIN nonces n          ON n.user_id  = u.id "
+        "                            AND n.expires_at > datetime('now') "
+        "LEFT JOIN unmatched_emails um ON um.user_id = u.id "
         "GROUP  BY u.id "
         "ORDER  BY u.username"
     ).fetchall()
@@ -177,7 +181,8 @@ def provider_new(user_id):
 
         if not tag or not start:
             flash('Tag and start marker are required.', 'error')
-            return render_template('admin/provider_form.html', user=user, provider=None, matchers=[])
+            return render_template('admin/provider_form.html',
+                                   user=user, provider=None, matchers=[], sample_sender=None)
 
         try:
             db = get_db()
@@ -190,12 +195,14 @@ def provider_new(user_id):
             db.commit()
         except sqlite3.IntegrityError:
             flash(f"Provider tag '{tag}' already exists for this user.", 'error')
-            return render_template('admin/provider_form.html', user=user, provider=None, matchers=[])
+            return render_template('admin/provider_form.html',
+                                   user=user, provider=None, matchers=[], sample_sender=None)
 
         flash(f"Provider '{tag}' created.", 'success')
         return redirect(url_for('admin.provider_list', user_id=user_id))
 
-    return render_template('admin/provider_form.html', user=user, provider=None, matchers=[])
+    return render_template('admin/provider_form.html',
+                           user=user, provider=None, matchers=[], sample_sender=None)
 
 
 @admin_bp.route('/users/<int:user_id>/providers/<int:provider_id>/edit', methods=['GET', 'POST'])
@@ -211,6 +218,15 @@ def provider_edit(user_id, provider_id):
         "SELECT * FROM provider_matchers WHERE provider_id = ?", (provider_id,)
     ).fetchall()
 
+    # Extract sender address from sample_email for the "from sample" matcher option.
+    sample_sender = None
+    if provider['sample_email']:
+        m = re.search(r'^From:\s*(.+)', provider['sample_email'],
+                      re.MULTILINE | re.IGNORECASE)
+        if m:
+            _, addr = parseaddr(m.group(1).strip())
+            sample_sender = addr.lower() if addr else None
+
     if request.method == 'POST':
         tag    = request.form.get('tag', '').strip()
         start  = request.form.get('nonce_start_marker', '').strip()
@@ -220,7 +236,8 @@ def provider_edit(user_id, provider_id):
         if not tag or not start:
             flash('Tag and start marker are required.', 'error')
             return render_template('admin/provider_form.html',
-                                   user=user, provider=provider, matchers=matchers)
+                                   user=user, provider=provider, matchers=matchers,
+                                   sample_sender=sample_sender)
         try:
             db.execute(
                 "UPDATE providers "
@@ -232,13 +249,15 @@ def provider_edit(user_id, provider_id):
         except sqlite3.IntegrityError:
             flash(f"Provider tag '{tag}' already exists for this user.", 'error')
             return render_template('admin/provider_form.html',
-                                   user=user, provider=provider, matchers=matchers)
+                                   user=user, provider=provider, matchers=matchers,
+                                   sample_sender=sample_sender)
 
         flash(f"Provider '{tag}' updated.", 'success')
         return redirect(url_for('admin.provider_list', user_id=user_id))
 
     return render_template('admin/provider_form.html',
-                           user=user, provider=provider, matchers=matchers)
+                           user=user, provider=provider, matchers=matchers,
+                           sample_sender=sample_sender)
 
 
 @admin_bp.route('/users/<int:user_id>/providers/<int:provider_id>/delete', methods=['GET', 'POST'])
@@ -268,11 +287,33 @@ def matcher_new(user_id, provider_id):
         flash('Provider not found.', 'error')
         return redirect(url_for('admin.provider_list', user_id=user_id))
 
-    sender  = request.form.get('sender_email', '').strip().lower() or None
-    subject = request.form.get('subject_pattern', '').strip() or None
+    # ── C: sender ──────────────────────────────────────────────────────────────
+    sender_mode = request.form.get('sender_mode', 'any')
+    if sender_mode == 'sample':
+        sample_text = provider['sample_email'] or ''
+        m = re.search(r'^From:\s*(.+)', sample_text, re.MULTILINE | re.IGNORECASE)
+        if m:
+            _, addr = parseaddr(m.group(1).strip())
+            sender = addr.lower() if addr else None
+        else:
+            sender = None
+    elif sender_mode == 'custom':
+        sender = request.form.get('sender_custom', '').strip().lower() or None
+    else:  # 'any'
+        sender = None
+
+    # ── D: subject ─────────────────────────────────────────────────────────────
+    subject_mode = request.form.get('subject_mode', 'any')
+    if subject_mode == 'contains':
+        text = request.form.get('subject_text', '').strip()
+        subject = re.escape(text) if text else None
+    elif subject_mode == 'regex':
+        subject = request.form.get('subject_regex', '').strip() or None
+    else:  # 'any'
+        subject = None
 
     if not sender and not subject:
-        flash('At least one of sender email or subject pattern must be provided.', 'error')
+        flash('At least one of sender or subject must be set (not both "any").', 'error')
         return redirect(url_for('admin.provider_edit',
                                 user_id=user_id, provider_id=provider_id))
 
@@ -299,3 +340,98 @@ def matcher_delete(user_id, provider_id, matcher_id):
     flash('Matcher removed.' if cur.rowcount else 'Matcher not found.', 'success')
     return redirect(url_for('admin.provider_edit',
                             user_id=user_id, provider_id=provider_id))
+
+
+# ── Unmatched emails ───────────────────────────────────────────────────────────
+
+@admin_bp.get('/unmatched')
+def unmatched_list():
+    rows = get_db().execute(
+        "SELECT e.id, e.sender, e.subject, e.received_at, "
+        "       u.id AS user_id, u.username "
+        "FROM   unmatched_emails e "
+        "JOIN   users u ON u.id = e.user_id "
+        "ORDER  BY e.received_at DESC"
+    ).fetchall()
+    return render_template('admin/unmatched_list.html', emails=rows)
+
+
+@admin_bp.route('/unmatched/<int:email_id>', methods=['GET', 'POST'])
+def unmatched_detail(email_id):
+    db  = get_db()
+    row = db.execute(
+        "SELECT e.*, u.id AS user_id, u.username "
+        "FROM   unmatched_emails e "
+        "JOIN   users u ON u.id = e.user_id "
+        "WHERE  e.id = ?", (email_id,)
+    ).fetchone()
+    if not row:
+        flash('Not found.', 'error')
+        return redirect(url_for('admin.unmatched_list'))
+
+    if request.method == 'POST':
+        action = request.form.get('action', '')
+
+        if action == 'promote':
+            tag   = request.form.get('tag', '').strip()
+            start = request.form.get('nonce_start_marker', '').strip()
+            end   = request.form.get('nonce_end_marker', '').strip() or None
+
+            # ── C: sender ──────────────────────────────────────────────────────
+            sender_mode = request.form.get('sender_mode', 'sample')
+            if sender_mode == 'sample':
+                sender = row['sender'] or None
+            elif sender_mode == 'custom':
+                sender = request.form.get('sender_custom', '').strip().lower() or None
+            else:  # 'any'
+                sender = None
+
+            # ── D: subject ─────────────────────────────────────────────────────
+            subject_mode = request.form.get('subject_mode', 'any')
+            if subject_mode == 'contains':
+                text = request.form.get('subject_text', '').strip()
+                subject_pattern = re.escape(text) if text else None
+            elif subject_mode == 'regex':
+                subject_pattern = request.form.get('subject_regex', '').strip() or None
+            else:  # 'any'
+                subject_pattern = None
+
+            if not tag or not start:
+                flash('Tag and start marker are required.', 'error')
+                return render_template('admin/unmatched_detail.html', row=row)
+
+            user_id = row['user_id']
+            try:
+                db.execute(
+                    "INSERT INTO providers "
+                    "  (user_id, tag, nonce_start_marker, nonce_end_marker) "
+                    "VALUES (?, ?, ?, ?)",
+                    (user_id, tag, start, end)
+                )
+                provider_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
+                db.execute(
+                    "INSERT INTO provider_matchers "
+                    "  (provider_id, sender_email, subject_pattern) "
+                    "VALUES (?, ?, ?)",
+                    (provider_id, sender, subject_pattern)
+                )
+                db.execute("DELETE FROM unmatched_emails WHERE id = ?", (email_id,))
+                db.commit()
+            except sqlite3.IntegrityError:
+                flash(f"Provider tag '{tag}' already exists for this user.", 'error')
+                return render_template('admin/unmatched_detail.html', row=row)
+
+            flash(f"Provider '{tag}' created.", 'success')
+            return redirect(url_for('admin.provider_edit',
+                                    user_id=user_id, provider_id=provider_id))
+
+    return render_template('admin/unmatched_detail.html', row=row)
+
+
+@admin_bp.post('/unmatched/<int:email_id>/dismiss')
+def unmatched_dismiss(email_id):
+    db = get_db()
+    db.execute("DELETE FROM unmatched_emails WHERE id = ?", (email_id,))
+    db.commit()
+    flash('Email dismissed.', 'success')
+    return redirect(url_for('admin.unmatched_list'))

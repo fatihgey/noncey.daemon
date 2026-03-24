@@ -173,15 +173,22 @@ def main():
             print(f"noncey ingest: unknown user: {username!r}", file=sys.stderr)
             sys.exit(67)
 
-        user_id = user['id']
+        user_id  = user['id']
+        text     = get_plaintext(msg)
         provider = find_matching_provider(conn, user_id, sender_addr, subject)
 
         if not provider:
-            # Not an email we were configured to handle — archive and exit cleanly.
+            # Not an email we were configured to handle — archive and store for review.
             archive_email(archive_root, username, raw_bytes)
+            with conn:
+                conn.execute(
+                    "INSERT INTO unmatched_emails "
+                    "  (user_id, sender, subject, body_text) "
+                    "VALUES (?, ?, ?, ?)",
+                    (user_id, sender_addr, subject, text)
+                )
             sys.exit(0)
 
-        text  = get_plaintext(msg)
         nonce = extract_nonce(text, provider['nonce_start_marker'], provider['nonce_end_marker'])
 
         if not nonce:

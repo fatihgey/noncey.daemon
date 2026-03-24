@@ -40,6 +40,16 @@ CREATE TABLE IF NOT EXISTS sessions (
     expires_at   TEXT    NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS unmatched_emails (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    sender      TEXT,
+    subject     TEXT,
+    body_text   TEXT,
+    received_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE INDEX IF NOT EXISTS idx_nonces_user_expires   ON nonces(user_id, expires_at);
 CREATE INDEX IF NOT EXISTS idx_sessions_token_hash   ON sessions(token_hash);
 CREATE INDEX IF NOT EXISTS idx_sessions_user         ON sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_unmatched_user        ON unmatched_emails(user_id, received_at);

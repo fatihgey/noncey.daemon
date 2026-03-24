@@ -1,0 +1,47 @@
+{% extends 'admin/_base.html' %}
+{% block title %}noncey — unmatched emails{% endblock %}
+{% block content %}
+
+<h1>Unmatched emails</h1>
+<p class="hint">
+  These emails were delivered to the noncey address but matched no configured provider.
+  Click an email to inspect it and optionally create a provider from it.
+</p>
+
+{% if emails %}
+<table>
+  <thead>
+    <tr>
+      <th>User</th>
+      <th>From</th>
+      <th>Subject</th>
+      <th>Received</th>
+      <th>Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for e in emails %}
+    <tr>
+      <td>{{ e.username }}</td>
+      <td>{{ e.sender or '' }}<span class="hint">{{ '(unknown)' if not e.sender }}</span></td>
+      <td>{{ e.subject or '' }}<span class="hint">{{ '(no subject)' if not e.subject }}</span></td>
+      <td>{{ e.received_at[:16] }}</td>
+      <td class="actions">
+        <a class="btn btn-primary" href="{{ url_for('admin.unmatched_detail', email_id=e.id) }}">Inspect</a>
+        <form class="inline" method="post"
+              action="{{ url_for('admin.unmatched_dismiss', email_id=e.id) }}">
+          <button class="btn btn-danger" type="submit"
+                  onclick="return confirm('Dismiss this email?')">Dismiss</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="empty">No unmatched emails.</p>
+{% endif %}
+
+<a class="btn" href="{{ url_for('admin.dashboard') }}">← Back</a>
+
+{% endblock %}

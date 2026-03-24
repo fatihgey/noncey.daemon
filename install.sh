@@ -354,6 +354,7 @@ cat > "${ETC_DIR}/noncey-admin-proxy.conf" <<EOF
     # noncey admin UI
     # Include this file inside your ${ADMIN_DOMAIN} <VirtualHost> block:
     #   Include ${ETC_DIR}/noncey-admin-proxy.conf
+    RedirectMatch permanent ^/noncey$ /noncey/
     ProxyPreserveHost On
     ProxyPass        /noncey/ http://127.0.0.1:${FLASK_PORT}/noncey/
     ProxyPassReverse /noncey/ http://127.0.0.1:${FLASK_PORT}/noncey/
