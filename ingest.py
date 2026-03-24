@@ -64,19 +64,89 @@ def get_plaintext(msg) -> str:
     return '\n'.join(parts)
 
 
-def extract_nonce(text: str, start_marker: str, end_marker: str | None) -> str | None:
-    """Slice the nonce value between start_marker and end_marker (or EOL)."""
+# Matches forwarding header blocks inserted by email clients, e.g.:
+#   ---------- Forwarded message ---------
+#   From: X  /  Date: Y  /  Subject: Z  /  To: W
+#   (blank line)
+# Also handles "Original Message", German "Weitergeleitete Nachricht", etc.
+_FORWARDED_BLOCK_RE = re.compile(
+    r'^[ \t]*-{4,}[ \t]*'
+    r'(?:forwarded message|original message|weitergeleitete nachricht'
+    r'|message transmis|mensaje reenviado)'
+    r'[^\n]*-{4,}[ \t]*\n'
+    r'(?:[ \t]*[A-Z][a-zA-Z\- ]+:[ \t]*[^\n]*\n)*'
+    r'[ \t]*\n?',
+    re.IGNORECASE | re.MULTILINE,
+)
+
+
+def strip_forwarded_headers(text: str) -> str:
+    """Remove forwarded-message header blocks (handles multiple nestings)."""
+    while True:
+        stripped = _FORWARDED_BLOCK_RE.sub('', text)
+        if stripped == text:
+            return text.strip()
+        text = stripped
+
+
+# Keyword pattern used by auto extraction (multilingual)
+_OTP_KEYWORD_RE = re.compile(
+    r'(?:code|otp|token|passcode|pin|one.time|verif\w*|security\s+code|access\s+code|'
+    r'sicherheitscode|einmalpasswort|zugangscode|passwort|kennwort)'
+    r'(?:[^\w\n]{1,15})'
+    r'([A-Z0-9]{4,10}|\d{4,9})',
+    re.IGNORECASE,
+)
+
+
+def _extract_auto(text: str) -> str | None:
+    """Heuristic OTP extraction with no configuration."""
+    # 1. Text near a keyword (most reliable)
+    m = _OTP_KEYWORD_RE.search(text)
+    if m:
+        return m.group(1)
+    # 2. Standalone 5–9-digit sequence
+    m = re.search(r'(?<!\d)(\d{5,9})(?!\d)', text)
+    if m:
+        return m.group(1)
+    # 3. Standalone 4-digit sequence — skip obvious years (1900-2099)
+    for m in re.finditer(r'(?<!\d)(\d{4})(?!\d)', text):
+        val = m.group(1)
+        if not re.match(r'^(?:19|20)\d{2}$', val):
+            return val
+    return None
+
+
+def extract_nonce(
+    text: str,
+    mode: str,
+    start_marker: str,
+    end_marker: str | None,
+    length: int | None,
+) -> str | None:
+    """Extract OTP from *text* according to the provider's extraction settings."""
+    if mode == 'auto':
+        return _extract_auto(text)
+
+    if not start_marker:
+        return None
+
     idx = text.find(start_marker)
     if idx == -1:
         return None
     after = text[idx + len(start_marker):]
+
+    if mode == 'start_length' and length:
+        return after[:length].strip() or None
+
+    # mode == 'markers'
     if end_marker:
         end_idx = after.find(end_marker)
         if end_idx == -1:
             end_idx = after.find('\n')
     else:
         end_idx = after.find('\n')
-    nonce = (after[:end_idx].strip() if end_idx != -1 else after.strip())
+    nonce = after[:end_idx].strip() if end_idx != -1 else after.strip()
     return nonce or None
 
 
@@ -103,7 +173,8 @@ def find_matching_provider(conn, user_id: int, sender_addr: str, subject: str):
     or None if no match.
     """
     providers = conn.execute(
-        "SELECT id, nonce_start_marker, nonce_end_marker "
+        "SELECT id, extract_source, extract_mode, "
+        "       nonce_start_marker, nonce_end_marker, nonce_length "
         "FROM providers WHERE user_id = ?",
         (user_id,)
     ).fetchall()
@@ -174,7 +245,7 @@ def main():
             sys.exit(67)
 
         user_id  = user['id']
-        text     = get_plaintext(msg)
+        body     = strip_forwarded_headers(get_plaintext(msg))
         provider = find_matching_provider(conn, user_id, sender_addr, subject)
 
         if not provider:
@@ -185,11 +256,19 @@ def main():
                     "INSERT INTO unmatched_emails "
                     "  (user_id, sender, subject, body_text) "
                     "VALUES (?, ?, ?, ?)",
-                    (user_id, sender_addr, subject, text)
+                    (user_id, sender_addr, subject, body)
                 )
             sys.exit(0)
 
-        nonce = extract_nonce(text, provider['nonce_start_marker'], provider['nonce_end_marker'])
+        src  = provider['extract_source'] or 'body'
+        text = subject if src == 'subject' else body
+        nonce = extract_nonce(
+            text,
+            provider['extract_mode']       or 'auto',
+            provider['nonce_start_marker'] or '',
+            provider['nonce_end_marker'],
+            provider['nonce_length'],
+        )
 
         if not nonce:
             print(

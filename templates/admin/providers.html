@@ -9,8 +9,7 @@
   <thead>
     <tr>
       <th>Tag</th>
-      <th>Start marker</th>
-      <th>End marker</th>
+      <th>Extraction</th>
       <th>Matchers</th>
       <th>Actions</th>
     </tr>
@@ -19,13 +18,17 @@
     {% for p in providers %}
     <tr>
       <td><strong>{{ p.tag }}</strong></td>
-      <td><code>{{ p.nonce_start_marker }}</code></td>
       <td>
-        {% if p.nonce_end_marker %}
-          <code>{{ p.nonce_end_marker }}</code>
+        {% set mode = p.extract_mode or 'auto' %}
+        {% set src  = p.extract_source or 'body' %}
+        {% if mode == 'auto' %}
+          <span class="hint">auto</span>
+        {% elif mode == 'start_length' %}
+          <code>{{ p.nonce_start_marker }}</code> + {{ p.nonce_length or '?' }} chars
         {% else %}
-          <span class="hint">end of line</span>
+          <code>{{ p.nonce_start_marker }}</code>…<code>{{ p.nonce_end_marker or '↵' }}</code>
         {% endif %}
+        {% if src == 'subject' %}<span class="hint">(subject)</span>{% endif %}
       </td>
       <td>
         {% set m_count = matchers[p.id]|length %}

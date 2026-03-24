@@ -22,16 +22,6 @@
   <input type="hidden" name="action" value="promote">
 
   <div class="field">
-    <label>Step 1 — identify the nonce</label>
-    <p class="hint">Type the OTP/code you can see in the body above, then click Detect.</p>
-    <div style="display:flex;gap:.5rem;">
-      <input type="text" id="nonce-detect" placeholder="e.g. 483921"
-             autocomplete="off" spellcheck="false" style="flex:1;">
-      <button type="button" class="btn" onclick="detectMarkers()">Detect markers</button>
-    </div>
-  </div>
-
-  <div class="field">
     <label for="tag">Provider tag</label>
     <input type="text" id="tag" name="tag" required autocomplete="off" spellcheck="false"
            placeholder="e.g. github, bank-otp">
@@ -39,17 +29,54 @@
   </div>
 
   <div class="field">
-    <label for="nonce_start_marker">Start marker</label>
-    <input type="text" id="nonce_start_marker" name="nonce_start_marker"
-           required autocomplete="off" spellcheck="false">
-    <p class="hint">Text immediately before the OTP in the email body.</p>
+    <label>Extract from</label>
+    <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;margin-bottom:.35rem;">
+      <input type="radio" name="extract_source" value="body" checked> Email body
+    </label>
+    <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;">
+      <input type="radio" name="extract_source" value="subject"> Subject line
+    </label>
   </div>
 
   <div class="field">
+    <label>Extraction mode</label>
+    <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;margin-bottom:.35rem;">
+      <input type="radio" name="extract_mode" value="auto" checked>
+      <span><strong>Auto</strong> — daemon detects the OTP automatically</span>
+    </label>
+    <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;margin-bottom:.35rem;">
+      <input type="radio" name="extract_mode" value="markers">
+      <strong>Start + end marker</strong>
+    </label>
+    <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;">
+      <input type="radio" name="extract_mode" value="start_length">
+      <strong>Start marker + fixed length</strong>
+    </label>
+  </div>
+
+  <div id="start-field" class="field" style="display:none;">
+    <label>Detect markers from body</label>
+    <div style="display:flex;gap:.5rem;margin-bottom:.75rem;">
+      <input type="text" id="nonce-detect" placeholder="Enter the OTP you see above"
+             autocomplete="off" spellcheck="false" style="flex:1;">
+      <button type="button" class="btn" onclick="detectMarkers()">Detect</button>
+    </div>
+    <label for="nonce_start_marker">Start marker</label>
+    <input type="text" id="nonce_start_marker" name="nonce_start_marker"
+           autocomplete="off" spellcheck="false">
+    <p class="hint">Text immediately before the OTP in the source text.</p>
+  </div>
+
+  <div id="end-field" class="field" style="display:none;">
     <label for="nonce_end_marker">End marker <small>(optional)</small></label>
     <input type="text" id="nonce_end_marker" name="nonce_end_marker"
            autocomplete="off" spellcheck="false">
     <p class="hint">Text immediately after the OTP. Leave blank to read to end of line.</p>
+  </div>
+
+  <div id="length-field" class="field" style="display:none;">
+    <label for="nonce_length">OTP length <small>(characters)</small></label>
+    <input type="number" id="nonce_length" name="nonce_length" min="1" max="20" style="width:6rem;">
   </div>
 
   <div class="field">
@@ -118,20 +145,43 @@
 </form>
 
 <script>
+function updateMode() {
+  var mode = document.querySelector('input[name=extract_mode]:checked').value;
+  document.getElementById('start-field').style.display  = mode === 'auto'        ? 'none' : '';
+  document.getElementById('end-field').style.display    = mode === 'markers'      ? ''     : 'none';
+  document.getElementById('length-field').style.display = mode === 'start_length' ? ''     : 'none';
+}
+document.querySelectorAll('input[name=extract_mode]').forEach(function(r) {
+  r.addEventListener('change', updateMode);
+});
+updateMode();
+
 function detectMarkers() {
-  var body   = document.getElementById('body-text').textContent;
-  var nonce  = document.getElementById('nonce-detect').value.trim();
-  if (!nonce) { alert('Enter the nonce value first.'); return; }
-  var idx = body.indexOf(nonce);
-  if (idx === -1) { alert('Nonce value not found in the email body.'); return; }
-  var before     = body.substring(0, idx);
-  var lineStart  = before.lastIndexOf('\n') + 1;
-  var startMarker = before.substring(lineStart);
-  var after      = body.substring(idx + nonce.length);
-  var lineEnd    = after.indexOf('\n');
-  var endMarker  = lineEnd === -1 ? '' : after.substring(0, lineEnd).trim();
-  document.getElementById('nonce_start_marker').value = startMarker;
-  document.getElementById('nonce_end_marker').value   = endMarker;
+  var mode  = document.querySelector('input[name=extract_mode]:checked').value;
+  var src   = document.querySelector('input[name=extract_source]:checked').value;
+  var nonce = document.getElementById('nonce-detect').value.trim();
+  if (!nonce) { alert('Enter the OTP value first.'); return; }
+
+  var text = src === 'subject'
+    ? {{ row.subject | tojson }}
+    : document.getElementById('body-text').textContent;
+
+  var idx = text.indexOf(nonce);
+  if (idx === -1) { alert('OTP value not found in the selected source.'); return; }
+
+  var before    = text.substring(0, idx);
+  var lineStart = before.lastIndexOf('\n') + 1;
+  document.getElementById('nonce_start_marker').value = before.substring(lineStart);
+
+  if (mode === 'markers') {
+    var after   = text.substring(idx + nonce.length);
+    var lineEnd = after.indexOf('\n');
+    document.getElementById('nonce_end_marker').value =
+      lineEnd === -1 ? '' : after.substring(0, lineEnd).trim();
+  }
+  if (mode === 'start_length') {
+    document.getElementById('nonce_length').value = nonce.length;
+  }
 }
 </script>
 

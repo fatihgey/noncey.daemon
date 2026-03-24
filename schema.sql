@@ -9,8 +9,11 @@ CREATE TABLE IF NOT EXISTS providers (
     id                  INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id             INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     tag                 TEXT    NOT NULL,
-    nonce_start_marker  TEXT    NOT NULL,
+    extract_source      TEXT    NOT NULL DEFAULT 'body',
+    extract_mode        TEXT    NOT NULL DEFAULT 'auto',
+    nonce_start_marker  TEXT    NOT NULL DEFAULT '',
     nonce_end_marker    TEXT,
+    nonce_length        INTEGER,
     sample_email        TEXT,
     UNIQUE(user_id, tag)
 );

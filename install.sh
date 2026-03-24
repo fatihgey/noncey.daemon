@@ -203,6 +203,25 @@ step "Database initialisation"
 [[ -f "$DB_PATH" ]] && chown noncey:noncey "$DB_PATH" && chmod 640 "$DB_PATH"
 ok "Schema initialised: $DB_PATH"
 
+# Migrate providers table for existing databases (new columns added over time).
+# ALTER TABLE ADD COLUMN is idempotent when guarded by PRAGMA table_info.
+sudo -u noncey "$VENV/bin/python3" - "$DB_PATH" <<'PY'
+import sys, sqlite3
+db   = sqlite3.connect(sys.argv[1])
+cols = {r[1] for r in db.execute("PRAGMA table_info(providers)").fetchall()}
+migrations = [
+    ("extract_source",     "ALTER TABLE providers ADD COLUMN extract_source TEXT NOT NULL DEFAULT 'body'"),
+    ("extract_mode",       "ALTER TABLE providers ADD COLUMN extract_mode   TEXT NOT NULL DEFAULT 'auto'"),
+    ("nonce_length",       "ALTER TABLE providers ADD COLUMN nonce_length   INTEGER"),
+]
+for col, sql in migrations:
+    if col not in cols:
+        db.execute(sql)
+db.commit()
+db.close()
+PY
+ok "Migration complete."
+
 # =============================================================================
 step "Postfix: ${ETC_DIR}/nonce_accept.cf"
 #

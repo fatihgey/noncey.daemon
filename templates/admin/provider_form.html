@@ -20,26 +20,67 @@
   </div>
 
   <div class="field">
-    <label for="nonce_start_marker">Start marker</label>
-    <input type="text" id="nonce_start_marker" name="nonce_start_marker"
-           value="{{ provider.nonce_start_marker if provider else '' }}"
-           required autocomplete="off">
-    <p class="hint">Text that appears immediately before the OTP in the email body.</p>
+    <label>Extract from</label>
+    {% set cur_src = provider.extract_source if provider else 'body' %}
+    <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;margin-bottom:.35rem;">
+      <input type="radio" name="extract_source" value="body"
+             {{ 'checked' if cur_src != 'subject' }}> Email body
+    </label>
+    <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;">
+      <input type="radio" name="extract_source" value="subject"
+             {{ 'checked' if cur_src == 'subject' }}> Subject line
+    </label>
   </div>
 
   <div class="field">
+    <label>Extraction mode</label>
+    {% set cur_mode = provider.extract_mode if provider else 'auto' %}
+    <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;margin-bottom:.35rem;">
+      <input type="radio" name="extract_mode" value="auto"
+             {{ 'checked' if cur_mode == 'auto' }}>
+      <span><strong>Auto</strong> — daemon detects the OTP automatically (no markers needed)</span>
+    </label>
+    <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;margin-bottom:.35rem;">
+      <input type="radio" name="extract_mode" value="markers"
+             {{ 'checked' if cur_mode == 'markers' }}>
+      <strong>Start + end marker</strong>
+    </label>
+    <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;">
+      <input type="radio" name="extract_mode" value="start_length"
+             {{ 'checked' if cur_mode == 'start_length' }}>
+      <strong>Start marker + fixed length</strong>
+    </label>
+  </div>
+
+  <div id="start-field" class="field">
+    <label for="nonce_start_marker">Start marker</label>
+    <input type="text" id="nonce_start_marker" name="nonce_start_marker"
+           value="{{ provider.nonce_start_marker if provider else '' }}"
+           autocomplete="off" spellcheck="false">
+    <p class="hint">Text immediately before the OTP in the source text.</p>
+  </div>
+
+  <div id="end-field" class="field">
     <label for="nonce_end_marker">End marker <small>(optional)</small></label>
     <input type="text" id="nonce_end_marker" name="nonce_end_marker"
            value="{{ provider.nonce_end_marker if provider else '' }}"
-           autocomplete="off">
+           autocomplete="off" spellcheck="false">
     <p class="hint">Text immediately after the OTP. Leave blank to read to end of line.</p>
+  </div>
+
+  <div id="length-field" class="field">
+    <label for="nonce_length">OTP length <small>(characters)</small></label>
+    <input type="number" id="nonce_length" name="nonce_length" min="1" max="20"
+           value="{{ provider.nonce_length if provider and provider.nonce_length else '' }}"
+           style="width:6rem;">
+    <p class="hint">Number of characters to read after the start marker.</p>
   </div>
 
   <div class="field">
     <label for="sample_email">Sample email <small>(optional)</small></label>
     <textarea id="sample_email" name="sample_email"
               spellcheck="false">{{ provider.sample_email if provider else '' }}</textarea>
-    <p class="hint">Paste a representative email for reference. Not used at runtime.</p>
+    <p class="hint">Paste a representative email for reference and sender detection.</p>
   </div>
 
   <input class="btn btn-primary" type="submit"
@@ -142,4 +183,18 @@
 </form>
 
 {% endif %}{# end if provider #}
+
+<script>
+function updateMode() {
+  var mode = document.querySelector('input[name=extract_mode]:checked').value;
+  document.getElementById('start-field').style.display  = mode === 'auto'         ? 'none' : '';
+  document.getElementById('end-field').style.display    = mode === 'markers'       ? ''     : 'none';
+  document.getElementById('length-field').style.display = mode === 'start_length'  ? ''     : 'none';
+}
+document.querySelectorAll('input[name=extract_mode]').forEach(function(r) {
+  r.addEventListener('change', updateMode);
+});
+updateMode();
+</script>
+
 {% endblock %}

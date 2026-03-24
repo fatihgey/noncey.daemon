@@ -175,12 +175,22 @@ def provider_new(user_id):
 
     if request.method == 'POST':
         tag    = request.form.get('tag', '').strip()
-        start  = request.form.get('nonce_start_marker', '').strip()
+        mode   = request.form.get('extract_mode', 'auto')
+        source = request.form.get('extract_source', 'body')
+        start  = '' if mode == 'auto' else request.form.get('nonce_start_marker', '').strip()
         end    = request.form.get('nonce_end_marker', '').strip() or None
         sample = request.form.get('sample_email', '').strip() or None
+        try:
+            length = int(request.form['nonce_length']) if request.form.get('nonce_length', '').strip() else None
+        except ValueError:
+            length = None
 
-        if not tag or not start:
-            flash('Tag and start marker are required.', 'error')
+        if not tag:
+            flash('Tag is required.', 'error')
+            return render_template('admin/provider_form.html',
+                                   user=user, provider=None, matchers=[], sample_sender=None)
+        if mode != 'auto' and not start:
+            flash('Start marker is required for this extraction mode.', 'error')
             return render_template('admin/provider_form.html',
                                    user=user, provider=None, matchers=[], sample_sender=None)
 
@@ -188,9 +198,10 @@ def provider_new(user_id):
             db = get_db()
             db.execute(
                 "INSERT INTO providers "
-                "  (user_id, tag, nonce_start_marker, nonce_end_marker, sample_email) "
-                "VALUES (?, ?, ?, ?, ?)",
-                (user_id, tag, start, end, sample)
+                "  (user_id, tag, extract_source, extract_mode, "
+                "   nonce_start_marker, nonce_end_marker, nonce_length, sample_email) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (user_id, tag, source, mode, start, end, length, sample)
             )
             db.commit()
         except sqlite3.IntegrityError:
@@ -229,21 +240,33 @@ def provider_edit(user_id, provider_id):
 
     if request.method == 'POST':
         tag    = request.form.get('tag', '').strip()
-        start  = request.form.get('nonce_start_marker', '').strip()
+        mode   = request.form.get('extract_mode', 'auto')
+        source = request.form.get('extract_source', 'body')
+        start  = '' if mode == 'auto' else request.form.get('nonce_start_marker', '').strip()
         end    = request.form.get('nonce_end_marker', '').strip() or None
         sample = request.form.get('sample_email', '').strip() or None
+        try:
+            length = int(request.form['nonce_length']) if request.form.get('nonce_length', '').strip() else None
+        except ValueError:
+            length = None
 
-        if not tag or not start:
-            flash('Tag and start marker are required.', 'error')
+        if not tag:
+            flash('Tag is required.', 'error')
+            return render_template('admin/provider_form.html',
+                                   user=user, provider=provider, matchers=matchers,
+                                   sample_sender=sample_sender)
+        if mode != 'auto' and not start:
+            flash('Start marker is required for this extraction mode.', 'error')
             return render_template('admin/provider_form.html',
                                    user=user, provider=provider, matchers=matchers,
                                    sample_sender=sample_sender)
         try:
             db.execute(
                 "UPDATE providers "
-                "SET tag=?, nonce_start_marker=?, nonce_end_marker=?, sample_email=? "
+                "SET tag=?, extract_source=?, extract_mode=?, "
+                "    nonce_start_marker=?, nonce_end_marker=?, nonce_length=?, sample_email=? "
                 "WHERE id=?",
-                (tag, start, end, sample, provider_id)
+                (tag, source, mode, start, end, length, sample, provider_id)
             )
             db.commit()
         except sqlite3.IntegrityError:
@@ -377,9 +400,15 @@ def unmatched_detail(email_id):
         action = request.form.get('action', '')
 
         if action == 'promote':
-            tag   = request.form.get('tag', '').strip()
-            start = request.form.get('nonce_start_marker', '').strip()
-            end   = request.form.get('nonce_end_marker', '').strip() or None
+            tag    = request.form.get('tag', '').strip()
+            mode   = request.form.get('extract_mode', 'auto')
+            source = request.form.get('extract_source', 'body')
+            start  = '' if mode == 'auto' else request.form.get('nonce_start_marker', '').strip()
+            end    = request.form.get('nonce_end_marker', '').strip() or None
+            try:
+                length = int(request.form['nonce_length']) if request.form.get('nonce_length', '').strip() else None
+            except ValueError:
+                length = None
 
             # ── C: sender ──────────────────────────────────────────────────────
             sender_mode = request.form.get('sender_mode', 'sample')
@@ -400,17 +429,21 @@ def unmatched_detail(email_id):
             else:  # 'any'
                 subject_pattern = None
 
-            if not tag or not start:
-                flash('Tag and start marker are required.', 'error')
+            if not tag:
+                flash('Tag is required.', 'error')
+                return render_template('admin/unmatched_detail.html', row=row)
+            if mode != 'auto' and not start:
+                flash('Start marker is required for this extraction mode.', 'error')
                 return render_template('admin/unmatched_detail.html', row=row)
 
             user_id = row['user_id']
             try:
                 db.execute(
                     "INSERT INTO providers "
-                    "  (user_id, tag, nonce_start_marker, nonce_end_marker) "
-                    "VALUES (?, ?, ?, ?)",
-                    (user_id, tag, start, end)
+                    "  (user_id, tag, extract_source, extract_mode, "
+                    "   nonce_start_marker, nonce_end_marker, nonce_length) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (user_id, tag, source, mode, start, end, length)
                 )
                 provider_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
                 db.execute(
