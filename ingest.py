@@ -137,7 +137,7 @@ def extract_nonce(
     after = text[idx + len(start_marker):]
 
     if mode == 'start_length' and length:
-        return after[:length].strip() or None
+        return after.lstrip()[:length] or None
 
     # mode == 'markers'
     if end_marker:
