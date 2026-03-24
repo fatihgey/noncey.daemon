@@ -344,16 +344,20 @@ def matcher_delete(user_id, provider_id, matcher_id):
 
 # ── Unmatched emails ───────────────────────────────────────────────────────────
 
-@admin_bp.get('/unmatched')
-def unmatched_list():
+@admin_bp.get('/users/<int:user_id>/unmatched')
+def unmatched_list(user_id):
+    user = _get_user(user_id)
+    if not user:
+        flash('User not found.', 'error')
+        return redirect(url_for('admin.dashboard'))
     rows = get_db().execute(
-        "SELECT e.id, e.sender, e.subject, e.received_at, "
-        "       u.id AS user_id, u.username "
-        "FROM   unmatched_emails e "
-        "JOIN   users u ON u.id = e.user_id "
-        "ORDER  BY e.received_at DESC"
+        "SELECT id, sender, subject, received_at "
+        "FROM   unmatched_emails "
+        "WHERE  user_id = ? "
+        "ORDER  BY received_at DESC",
+        (user_id,)
     ).fetchall()
-    return render_template('admin/unmatched_list.html', emails=rows)
+    return render_template('admin/unmatched_list.html', user=user, emails=rows)
 
 
 @admin_bp.route('/unmatched/<int:email_id>', methods=['GET', 'POST'])
@@ -430,8 +434,14 @@ def unmatched_detail(email_id):
 
 @admin_bp.post('/unmatched/<int:email_id>/dismiss')
 def unmatched_dismiss(email_id):
-    db = get_db()
+    db  = get_db()
+    row = db.execute(
+        "SELECT user_id FROM unmatched_emails WHERE id = ?", (email_id,)
+    ).fetchone()
     db.execute("DELETE FROM unmatched_emails WHERE id = ?", (email_id,))
     db.commit()
     flash('Email dismissed.', 'success')
-    return redirect(url_for('admin.unmatched_list'))
+    user_id = row['user_id'] if row else None
+    if user_id:
+        return redirect(url_for('admin.unmatched_list', user_id=user_id))
+    return redirect(url_for('admin.dashboard'))

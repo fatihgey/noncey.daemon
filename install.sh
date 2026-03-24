@@ -171,11 +171,11 @@ step "Application files  →  $INSTALL_DIR"
 # Copy source files. The source has no etc/ subdir, so the user's config
 # at ${ETC_DIR}/noncey.conf is not affected by this copy.
 cp -r "${SOURCE_DIR}"/. "${INSTALL_DIR}/"
-chown -R root:root "${INSTALL_DIR}"
-# var/ and etc/ ownership restored after the broad chown above
-chown  noncey:noncey "${VAR_DIR}"      "${ARCHIVE_PATH}"
-[[ -f "$DB_PATH" ]] && chown noncey:noncey "$DB_PATH"
-chown  root:noncey   "${ETC_DIR}"      "$CONF"
+chown -R root:root    "${INSTALL_DIR}"
+# Restore var/ recursively — subdirectories (e.g. archive/username/) may exist
+# from previous runs and must be owned by noncey, not root.
+chown -R noncey:noncey "${VAR_DIR}"
+chown    root:noncey   "${ETC_DIR}"      "$CONF"
 ok "Files copied."
 
 # =============================================================================

@@ -24,7 +24,7 @@
       <td>{{ u.active_nonce_count }}</td>
       <td>
         {% if u.unmatched_count %}
-          <a href="{{ url_for('admin.unmatched_list') }}">{{ u.unmatched_count }}</a>
+          <a href="{{ url_for('admin.unmatched_list', user_id=u.id) }}">{{ u.unmatched_count }}</a>
         {% else %}
           0
         {% endif %}
