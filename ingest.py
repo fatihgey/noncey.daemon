@@ -18,6 +18,7 @@ import sqlite3
 import configparser
 from datetime import datetime, timedelta, timezone
 from email import policy
+from email.utils import parseaddr
 from pathlib import Path
 
 CONFIG_PATH = os.environ.get('NONCEY_CONF', '/etc/noncey/noncey.conf')
@@ -89,6 +90,25 @@ def strip_forwarded_headers(text: str) -> str:
         text = stripped
 
 
+def _extract_forwarded_sender(text: str) -> str | None:
+    """
+    Return the sender address of the innermost (first/original) forwarded email.
+    The LAST forwarded-block match in the text is the deepest nesting level,
+    which corresponds to the original forwarded message.
+    """
+    last_match = None
+    for m in _FORWARDED_BLOCK_RE.finditer(text):
+        last_match = m
+    if not last_match:
+        return None
+    block = last_match.group(0)
+    from_m = re.search(r'^From:\s*(.+)', block, re.MULTILINE | re.IGNORECASE)
+    if not from_m:
+        return None
+    _, addr = parseaddr(from_m.group(1).strip())
+    return addr.lower() if addr else None
+
+
 # Keyword pattern used by auto extraction (multilingual)
 _OTP_KEYWORD_RE = re.compile(
     r'(?:code|otp|token|passcode|pin|one.time|verif\w*|security\s+code|access\s+code|'
@@ -126,6 +146,18 @@ def extract_nonce(
 ) -> str | None:
     """Extract OTP from *text* according to the provider's extraction settings."""
     if mode == 'auto':
+        # If derived markers are available (from example OTP at setup time), try
+        # start+length first; fall back to pure heuristics only if not found.
+        if start_marker:
+            idx = text.find(start_marker)
+            if idx != -1:
+                after = text[idx + len(start_marker):]
+                stripped = after.lstrip(' \t')
+                if stripped and stripped[0] != '\n':
+                    n = length or len(stripped.split('\n')[0].strip())
+                    candidate = stripped[:n]
+                    if candidate:
+                        return candidate
         return _extract_auto(text)
 
     if not start_marker:
@@ -136,17 +168,24 @@ def extract_nonce(
         return None
     after = text[idx + len(start_marker):]
 
-    if mode == 'start_length' and length:
-        return after.lstrip()[:length] or None
+    # Per-line safeguard (6.3): restrict search to the current line only.
+    line_end = after.find('\n')
+    search_area = after[:line_end] if line_end != -1 else after
+
+    if mode == 'start_length':
+        stripped = search_area.lstrip(' \t')
+        if not stripped:
+            return None
+        return stripped[:length] if length else stripped.strip() or None
 
     # mode == 'markers'
     if end_marker:
-        end_idx = after.find(end_marker)
+        end_idx = search_area.find(end_marker)
         if end_idx == -1:
-            end_idx = after.find('\n')
+            return None  # end marker not found on same line
+        nonce = search_area[:end_idx].strip()
     else:
-        end_idx = after.find('\n')
-    nonce = after[:end_idx].strip() if end_idx != -1 else after.strip()
+        nonce = search_area.strip()
     return nonce or None
 
 
@@ -244,9 +283,11 @@ def main():
             print(f"noncey ingest: unknown user: {username!r}", file=sys.stderr)
             sys.exit(67)
 
-        user_id  = user['id']
-        body     = strip_forwarded_headers(get_plaintext(msg))
-        provider = find_matching_provider(conn, user_id, sender_addr, subject)
+        user_id   = user['id']
+        plaintext = get_plaintext(msg)
+        fwd_sender = _extract_forwarded_sender(plaintext)
+        body      = strip_forwarded_headers(plaintext)
+        provider  = find_matching_provider(conn, user_id, sender_addr, subject)
 
         if not provider:
             # Not an email we were configured to handle — archive and store for review.
@@ -254,9 +295,9 @@ def main():
             with conn:
                 conn.execute(
                     "INSERT INTO unmatched_emails "
-                    "  (user_id, sender, subject, body_text) "
-                    "VALUES (?, ?, ?, ?)",
-                    (user_id, sender_addr, subject, body)
+                    "  (user_id, sender, fwd_sender, subject, body_text) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    (user_id, sender_addr, fwd_sender, subject, body)
                 )
             sys.exit(0)
 

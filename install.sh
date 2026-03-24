@@ -207,16 +207,24 @@ ok "Schema initialised: $DB_PATH"
 # ALTER TABLE ADD COLUMN is idempotent when guarded by PRAGMA table_info.
 sudo -u noncey "$VENV/bin/python3" - "$DB_PATH" <<'PY'
 import sys, sqlite3
-db   = sqlite3.connect(sys.argv[1])
+db = sqlite3.connect(sys.argv[1])
+
 cols = {r[1] for r in db.execute("PRAGMA table_info(providers)").fetchall()}
-migrations = [
-    ("extract_source",     "ALTER TABLE providers ADD COLUMN extract_source TEXT NOT NULL DEFAULT 'body'"),
-    ("extract_mode",       "ALTER TABLE providers ADD COLUMN extract_mode   TEXT NOT NULL DEFAULT 'auto'"),
-    ("nonce_length",       "ALTER TABLE providers ADD COLUMN nonce_length   INTEGER"),
-]
-for col, sql in migrations:
+for col, sql in [
+    ("extract_source", "ALTER TABLE providers ADD COLUMN extract_source TEXT NOT NULL DEFAULT 'body'"),
+    ("extract_mode",   "ALTER TABLE providers ADD COLUMN extract_mode   TEXT NOT NULL DEFAULT 'auto'"),
+    ("nonce_length",   "ALTER TABLE providers ADD COLUMN nonce_length   INTEGER"),
+]:
     if col not in cols:
         db.execute(sql)
+
+ucols = {r[1] for r in db.execute("PRAGMA table_info(unmatched_emails)").fetchall()}
+for col, sql in [
+    ("fwd_sender", "ALTER TABLE unmatched_emails ADD COLUMN fwd_sender TEXT"),
+]:
+    if col not in ucols:
+        db.execute(sql)
+
 db.commit()
 db.close()
 PY

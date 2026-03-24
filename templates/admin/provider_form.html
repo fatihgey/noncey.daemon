@@ -52,6 +52,16 @@
     </label>
   </div>
 
+  <div id="auto-field" class="field">
+    <label for="example_otp">Example OTP</label>
+    <input type="text" id="example_otp" name="example_otp"
+           autocomplete="off" spellcheck="false" placeholder="e.g. 482910">
+    <p class="hint">
+      Enter an OTP value from the sample email above.
+      The daemon will derive the extraction pattern from it automatically.
+    </p>
+  </div>
+
   <div id="start-field" class="field">
     <label for="nonce_start_marker">Start marker</label>
     <input type="text" id="nonce_start_marker" name="nonce_start_marker"
@@ -155,6 +165,7 @@
              style="width:auto;flex:1;" onfocus="document.getElementById('sender-custom-radio').checked=true">
     </label>
   </div>
+  {# fwd_sender is not applicable when creating a provider from scratch (no stored unmatched email) #}
 
   <div class="field">
     <label>Subject</label>
@@ -187,6 +198,7 @@
 <script>
 function updateMode() {
   var mode = document.querySelector('input[name=extract_mode]:checked').value;
+  document.getElementById('auto-field').style.display   = mode === 'auto'         ? ''     : 'none';
   document.getElementById('start-field').style.display  = mode === 'auto'         ? 'none' : '';
   document.getElementById('end-field').style.display    = mode === 'markers'       ? ''     : 'none';
   document.getElementById('length-field').style.display = mode === 'start_length'  ? ''     : 'none';

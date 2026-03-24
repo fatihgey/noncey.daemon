@@ -36,6 +36,23 @@ def _get_provider(provider_id: int, user_id: int):
     ).fetchone()
 
 
+def _derive_auto_markers(text: str, example_otp: str):
+    """
+    Given the source text and the known OTP value, derive start_marker and
+    nonce_length so the daemon can reliably re-extract it without heuristics.
+    Returns (start_marker, nonce_length) or ('', None) if not found.
+    """
+    if not example_otp or not text:
+        return '', None
+    idx = text.find(example_otp)
+    if idx == -1:
+        return '', None
+    before    = text[:idx]
+    line_start = before.rfind('\n') + 1
+    start_marker = before[line_start:]
+    return start_marker, len(example_otp)
+
+
 # ── Dashboard ─────────────────────────────────────────────────────────────────
 
 @admin_bp.get('/')
@@ -177,13 +194,31 @@ def provider_new(user_id):
         tag    = request.form.get('tag', '').strip()
         mode   = request.form.get('extract_mode', 'auto')
         source = request.form.get('extract_source', 'body')
-        start  = '' if mode == 'auto' else request.form.get('nonce_start_marker', '').strip()
         end    = request.form.get('nonce_end_marker', '').strip() or None
         sample = request.form.get('sample_email', '').strip() or None
         try:
             length = int(request.form['nonce_length']) if request.form.get('nonce_length', '').strip() else None
         except ValueError:
             length = None
+
+        if mode == 'auto':
+            example_otp = request.form.get('example_otp', '').strip()
+            if not example_otp:
+                flash('Example OTP is required for auto extraction mode.', 'error')
+                return render_template('admin/provider_form.html',
+                                       user=user, provider=None, matchers=[], sample_sender=None)
+            # Derive markers from sample email text + example OTP
+            sample_text = sample or ''
+            src_text = re.search(r'^Subject:\s*(.+)', sample_text, re.MULTILINE | re.IGNORECASE)
+            body_text = sample_text  # use full sample for body source
+            derive_from = src_text.group(1) if (source == 'subject' and src_text) else body_text
+            start, length = _derive_auto_markers(derive_from, example_otp)
+            if not start:
+                flash('Example OTP not found in the sample email text.', 'error')
+                return render_template('admin/provider_form.html',
+                                       user=user, provider=None, matchers=[], sample_sender=None)
+        else:
+            start = request.form.get('nonce_start_marker', '').strip()
 
         if not tag:
             flash('Tag is required.', 'error')
@@ -242,13 +277,31 @@ def provider_edit(user_id, provider_id):
         tag    = request.form.get('tag', '').strip()
         mode   = request.form.get('extract_mode', 'auto')
         source = request.form.get('extract_source', 'body')
-        start  = '' if mode == 'auto' else request.form.get('nonce_start_marker', '').strip()
         end    = request.form.get('nonce_end_marker', '').strip() or None
         sample = request.form.get('sample_email', '').strip() or None
         try:
             length = int(request.form['nonce_length']) if request.form.get('nonce_length', '').strip() else None
         except ValueError:
             length = None
+
+        if mode == 'auto':
+            example_otp = request.form.get('example_otp', '').strip()
+            if not example_otp:
+                flash('Example OTP is required for auto extraction mode.', 'error')
+                return render_template('admin/provider_form.html',
+                                       user=user, provider=provider, matchers=matchers,
+                                       sample_sender=sample_sender)
+            sample_text = sample or ''
+            src_text = re.search(r'^Subject:\s*(.+)', sample_text, re.MULTILINE | re.IGNORECASE)
+            derive_from = src_text.group(1) if (source == 'subject' and src_text) else sample_text
+            start, length = _derive_auto_markers(derive_from, example_otp)
+            if not start:
+                flash('Example OTP not found in the sample email text.', 'error')
+                return render_template('admin/provider_form.html',
+                                       user=user, provider=provider, matchers=matchers,
+                                       sample_sender=sample_sender)
+        else:
+            start = request.form.get('nonce_start_marker', '').strip()
 
         if not tag:
             flash('Tag is required.', 'error')
@@ -322,6 +375,8 @@ def matcher_new(user_id, provider_id):
             sender = None
     elif sender_mode == 'custom':
         sender = request.form.get('sender_custom', '').strip().lower() or None
+    elif sender_mode == 'fwd':
+        sender = request.form.get('sender_fwd', '').strip().lower() or None
     else:  # 'any'
         sender = None
 
@@ -394,7 +449,7 @@ def unmatched_detail(email_id):
     ).fetchone()
     if not row:
         flash('Not found.', 'error')
-        return redirect(url_for('admin.unmatched_list'))
+        return redirect(url_for('admin.dashboard'))
 
     if request.method == 'POST':
         action = request.form.get('action', '')
@@ -403,17 +458,31 @@ def unmatched_detail(email_id):
             tag    = request.form.get('tag', '').strip()
             mode   = request.form.get('extract_mode', 'auto')
             source = request.form.get('extract_source', 'body')
-            start  = '' if mode == 'auto' else request.form.get('nonce_start_marker', '').strip()
             end    = request.form.get('nonce_end_marker', '').strip() or None
             try:
                 length = int(request.form['nonce_length']) if request.form.get('nonce_length', '').strip() else None
             except ValueError:
                 length = None
 
+            if mode == 'auto':
+                example_otp = request.form.get('example_otp', '').strip()
+                if not example_otp:
+                    flash('Example OTP is required for auto extraction mode.', 'error')
+                    return render_template('admin/unmatched_detail.html', row=row)
+                derive_from = row['subject'] if source == 'subject' else (row['body_text'] or '')
+                start, length = _derive_auto_markers(derive_from, example_otp)
+                if not start:
+                    flash('Example OTP not found in the email text.', 'error')
+                    return render_template('admin/unmatched_detail.html', row=row)
+            else:
+                start = request.form.get('nonce_start_marker', '').strip()
+
             # ── C: sender ──────────────────────────────────────────────────────
             sender_mode = request.form.get('sender_mode', 'sample')
             if sender_mode == 'sample':
                 sender = row['sender'] or None
+            elif sender_mode == 'fwd':
+                sender = row['fwd_sender'] or None
             elif sender_mode == 'custom':
                 sender = request.form.get('sender_custom', '').strip().lower() or None
             else:  # 'any'

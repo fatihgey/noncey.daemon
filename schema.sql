@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS unmatched_emails (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     sender      TEXT,
+    fwd_sender  TEXT,
     subject     TEXT,
     body_text   TEXT,
     received_at TEXT NOT NULL DEFAULT (datetime('now'))

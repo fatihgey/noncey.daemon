@@ -54,6 +54,16 @@
     </label>
   </div>
 
+  <div id="auto-field" class="field" style="display:none;">
+    <label for="example_otp">Example OTP</label>
+    <input type="text" id="example_otp" name="example_otp"
+           autocomplete="off" spellcheck="false" placeholder="e.g. 482910">
+    <p class="hint">
+      Enter the OTP value visible in the email above.
+      The daemon derives the extraction pattern automatically.
+    </p>
+  </div>
+
   <div id="start-field" class="field" style="display:none;">
     <label>Detect markers from body</label>
     <div style="display:flex;gap:.5rem;margin-bottom:.75rem;">
@@ -84,11 +94,17 @@
     {% if row.sender %}
     <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;margin-bottom:.35rem;">
       <input type="radio" name="sender_mode" value="sample" checked>
-      Use sender from this email — <code>{{ row.sender }}</code>
+      Outer sender (forwarder) — <code>{{ row.sender }}</code>
+    </label>
+    {% endif %}
+    {% if row.fwd_sender %}
+    <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;margin-bottom:.35rem;">
+      <input type="radio" name="sender_mode" value="fwd" {{ 'checked' if not row.sender }}>
+      Origin of forwarded email — <code>{{ row.fwd_sender }}</code>
     </label>
     {% endif %}
     <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;margin-bottom:.35rem;">
-      <input type="radio" name="sender_mode" value="any" {{ 'checked' if not row.sender }}>
+      <input type="radio" name="sender_mode" value="any" {{ 'checked' if not row.sender and not row.fwd_sender }}>
       Any sender
     </label>
     <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;margin-bottom:.35rem;">
@@ -147,6 +163,7 @@
 <script>
 function updateMode() {
   var mode = document.querySelector('input[name=extract_mode]:checked').value;
+  document.getElementById('auto-field').style.display   = mode === 'auto'        ? ''     : 'none';
   document.getElementById('start-field').style.display  = mode === 'auto'        ? 'none' : '';
   document.getElementById('end-field').style.display    = mode === 'markers'      ? ''     : 'none';
   document.getElementById('length-field').style.display = mode === 'start_length' ? ''     : 'none';
