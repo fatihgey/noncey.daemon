@@ -48,9 +48,10 @@ reference for migrations, server rebuilds, and future contributors.
 
 | Component | Language / Runtime | Location |
 |---|---|---|
-| **noncey.daemon** — `ingest.py` | Python 3, stdlib only | `/opt/noncey/ingest.py` |
-| **noncey.daemon** — `app.py` | Python 3, Flask | `/opt/noncey/app.py` |
-| **noncey.extension** | Vanilla JS, Chrome MV3 | User's browser |
+| **noncey.daemon** — `ingest.py` | Python 3, stdlib only | `/opt/noncey/daemon/ingest.py` |
+| **noncey.daemon** — `app.py` | Python 3, Flask | `/opt/noncey/daemon/app.py` |
+| **noncey.daemon** — `admin.py` | Python 3, Flask Blueprint | `/opt/noncey/daemon/admin.py` |
+| **noncey.client.chromeextension** | Vanilla JS, Chrome MV3 | User's browser |
 | Apache2 (TLS + proxy) | System package | `/etc/apache2/` |
 | Postfix (SMTP + pipe) | System package | `/etc/postfix/` |
 | MySQL (virtual maps) | System package | existing install |
@@ -59,8 +60,8 @@ reference for migrations, server rebuilds, and future contributors.
 
 | Store | Path | Owner | Purpose |
 |---|---|---|---|
-| SQLite | `/var/lib/noncey/noncey.db` | `noncey` | Users, providers, nonces, sessions |
-| .eml archive | `/var/lib/noncey/archive/{username}/` | `noncey` | Flat-file email archive for audit/debug |
+| SQLite | `/opt/noncey/daemon/var/noncey.db` | `noncey` | Users, configs, providers, nonces, sessions |
+| .eml archive | `/opt/noncey/daemon/var/archive/{username}/` | `noncey` | Flat-file email archive for audit/debug |
 | MySQL | existing `postfix` database | `noncey` (limited) | Postfix virtual alias + transport routing |
 
 ---
@@ -79,23 +80,29 @@ Postfix  ──  MX record resolves nonces.yourdomain.com to this server
   │  virtual_transport table:
   │    nonces.yourdomain.com  →  nonce-pipe:
   │
-  │  virtual_aliases table:
-  │    nonce-alice@nonces.yourdomain.com  →  nonce-alice@nonces.yourdomain.com
-  │    (loopback alias keeps address valid; transport overrides delivery)
+  │  virtual_aliases table (nonce_accept.cf):
+  │    any @nonces.yourdomain.com  →  accepted (domain-wide MySQL map)
   │
   │  master.cf:
   │    nonce-pipe  unix  -  n  n  -  1  pipe
-  │      flags=Rq user=noncey argv=/opt/noncey/ingest.py ${recipient}
+  │      flags=Rq user=noncey argv=/opt/noncey/daemon/ingest-pipe ${recipient}
   │
   ▼
 ingest.py  (stdin = raw .eml bytes, argv[1] = recipient address)
   │
   ├─ extract username from "nonce-{username}@..." local part
   ├─ parse email (sender, subject, body)
-  ├─ look up user in SQLite → find matching provider via provider_matchers
-  ├─ extract nonce value using start/end markers
-  ├─ INSERT into nonces table (with expires_at = now + nonce_lifetime_h)
-  └─ write raw .eml to /var/lib/noncey/archive/{username}/{timestamp}.eml
+  ├─ strip forwarded-message headers; extract fwd_sender if present
+  ├─ look up user in SQLite
+  ├─ find matching provider via provider_matchers
+  │     (only providers whose configuration.status IN active/tested/public,
+  │      or providers with no config_id)
+  ├─ extract nonce value using configured extraction mode
+  ├─ INSERT into nonces table (expires_at = now + nonce_lifetime_h)
+  ├─ if provider has a config_id: increment config.test_count;
+  │     auto-advance config.status → 'tested' if test_count ≥ test_threshold
+  ├─ if no matching provider: INSERT into unmatched_emails for review
+  └─ write raw .eml to archive/{username}/{timestamp}.eml
 ```
 
 ### 2b. Extension polling → nonce delivered to browser
@@ -109,39 +116,41 @@ Chrome extension  (tab URL matches configured provider)
   │
   ▼
 Apache2 :443  nonces.yourdomain.com
-  │  TLS termination (user-provided cert)
+  │  TLS termination
   │  ProxyPass /api/ → http://127.0.0.1:5000/api/
   ▼
 Flask app.py
-  ├─ verify JWT signature + look up session in SQLite
+  ├─ verify JWT + session in SQLite
   ├─ hard-delete expired nonces for this user
-  └─ return JSON array [{id, provider_tag, nonce_value, received_at, expires_at, age_seconds}]
+  └─ return JSON array [{id, provider_tag, configuration_name,
+                         nonce_value, received_at, expires_at, age_seconds}]
   │
   ▼
 Extension
-  ├─ displays nonces in dropdown (truncated value + age)
-  └─ on selection: writes nonce_value into OTP field via CSS selector
+  ├─ groups nonces by configuration_name for display
+  └─ on selection: writes nonce_value into OTP field
 ```
 
-### 2c. User provisioning flow
+### 2c. User / configuration provisioning
 
 ```
-Admin (web UI or flask add-user)
+User (authenticated web UI at admin.yourdomain.com/noncey/)
   │
-  ├─ validate username (lowercase alnum + . _ -, max 64 chars)
-  └─ INSERT into SQLite: users  (bcrypt password hash)
-       that's it — no MySQL operation required
+  ├─ self-service: change password, download Gmail filter XML
+  ├─ configuration CRUD: create → add providers + matchers → activate
+  │     → accumulate test runs → submit for review → published (public)
+  ├─ subscribe to a public marketplace configuration
+  │     (copies providers+matchers to subscriber's account; source_config_id tracked)
+  └─ update subscription when owner publishes a newer version
 
-Admin (web UI or flask remove-user)
-  │
-  └─ DELETE from SQLite: users
-       CASCADE removes providers, provider_matchers, nonces, sessions
-       that's it — no MySQL operation required
+Admin (is_admin=1 or single user in DB)
+  ├─ all of the above, plus:
+  ├─ user CRUD (create, edit, delete)
+  └─ marketplace review queue: approve → status='public'; reject → status='tested'
+
+CLI (flask add-user / flask remove-user)
+  └─ headless user management for initial setup
 ```
-
-Postfix accepts ALL addresses at the nonce domain via a dedicated MySQL map file
-(`nonce_accept.cf`) installed once at setup time — see §7 (Operational Notes).
-No per-user alias rows are maintained.
 
 ---
 
@@ -150,25 +159,26 @@ No per-user alias rows are maintained.
 All REST endpoints are served by Flask on `127.0.0.1:5000` and exposed externally via
 Apache2 at `https://nonces.yourdomain.com/api/`.
 
-### Authentication
+### Authentication (REST API — Chrome extension)
 
 Tokens are long-lived JWTs (HS256, no `exp` claim). Expiry is enforced by the `sessions`
-table (`expires_at` = 30 days from login, sliding window via `last_used_at`). The token
-itself is stored only as a SHA-256 hash in the DB.
+table (`expires_at` = 30 days from login). The raw token is stored only as a SHA-256 hash.
 
 Include in requests as: `Authorization: Bearer <token>`
 
-### Endpoints
+### Authentication (Admin UI — browser)
+
+Flask signed cookie session (`session['user_id']`). Sessions are permanent with a 30-day
+lifetime (`app.permanent_session_lifetime`). Apache2 no longer handles authentication for
+the `/noncey/` path — Flask does it entirely.
+
+### REST Endpoints
 
 #### `POST /api/auth/login`
-Authenticate and receive a session token.
-
-Request body (JSON):
 ```json
+// request
 { "username": "alice", "password": "secret" }
-```
-Response `200`:
-```json
+// response 200
 { "token": "<jwt>", "expires_at": "2026-04-22T10:00:00+00:00" }
 ```
 Errors: `400` missing fields, `401` bad credentials.
@@ -176,15 +186,13 @@ Errors: `400` missing fields, `401` bad credentials.
 ---
 
 #### `POST /api/auth/logout`
-Revoke the current session token.
-
-Response: `204 No Content`
+Revoke the current session. Response: `204 No Content`
 
 ---
 
 #### `GET /api/nonces`
-Return all unexpired nonces for the authenticated user. Expired nonces are hard-deleted
-as a side effect of this call.
+Return all unexpired nonces for the authenticated user (expired nonces are hard-deleted
+as a side effect).
 
 Response `200`:
 ```json
@@ -192,6 +200,7 @@ Response `200`:
   {
     "id": 42,
     "provider_tag": "github",
+    "configuration_name": "github-otp",
     "nonce_value": "847291",
     "received_at": "2026-03-23T09:14:00+00:00",
     "expires_at":  "2026-03-23T11:14:00+00:00",
@@ -204,14 +213,43 @@ Response `200`:
 
 #### `DELETE /api/nonces/<id>`
 Delete a specific nonce (e.g. after successful use).
-
-Response: `204 No Content`, or `404` if not found / not owned by the caller.
+Response: `204 No Content`, or `404` if not found / not owned by caller.
 
 ---
 
-### Admin UI routes (step 3, not yet implemented)
-Will be served under `https://admin.yourdomain.com/noncey/` via the existing Apache2
-admin VirtualHost (Apache-level auth in place). Routes TBD.
+### Admin UI routes (`/noncey/`)
+
+| Route | Description |
+|---|---|
+| `GET/POST /noncey/login` | Login form |
+| `POST /noncey/logout` | Clear session |
+| `GET /noncey/` | Dashboard: owned + subscribed configs with update badges |
+| `GET/POST /noncey/configs/new` | Create configuration |
+| `GET/POST /noncey/configs/<id>/edit` | Edit configuration metadata |
+| `GET /noncey/configs/<id>` | Configuration detail (providers, lifecycle controls) |
+| `POST /noncey/configs/<id>/activate` | Toggle draft ↔ active |
+| `POST /noncey/configs/<id>/submit` | Submit tested config for marketplace review |
+| `GET/POST /noncey/configs/<id>/delete` | Delete configuration |
+| `GET/POST /noncey/configs/<id>/providers/new` | Add provider to config |
+| `GET/POST /noncey/configs/<id>/providers/<pid>/edit` | Edit provider |
+| `GET/POST /noncey/configs/<id>/providers/<pid>/delete` | Delete provider |
+| `POST /noncey/configs/<id>/providers/<pid>/matchers/new` | Add matcher |
+| `POST /noncey/configs/<id>/providers/<pid>/matchers/<mid>/delete` | Remove matcher |
+| `GET /noncey/unmatched` | User's unmatched email inbox |
+| `GET/POST /noncey/unmatched/<id>` | Inspect + promote to provider (with config selector) |
+| `POST /noncey/unmatched/<id>/dismiss` | Dismiss unmatched email |
+| `GET /noncey/marketplace` | Browse public configurations |
+| `POST /noncey/marketplace/<id>/subscribe` | Subscribe (copy) a public config |
+| `POST /noncey/marketplace/<id>/update/<local_id>` | Update subscription to newer version |
+| `GET/POST /noncey/account/password` | Change own password |
+| `GET /noncey/account/gmail-filters.xml` | Download Gmail Atom filter XML |
+| `GET /noncey/admin/users` | *(admin)* User list |
+| `GET/POST /noncey/admin/users/new` | *(admin)* Create user |
+| `GET/POST /noncey/admin/users/<id>/edit` | *(admin)* Edit user |
+| `GET/POST /noncey/admin/users/<id>/delete` | *(admin)* Delete user |
+| `GET /noncey/admin/marketplace` | *(admin)* Review queue |
+| `POST /noncey/admin/marketplace/<id>/approve` | *(admin)* Approve → public |
+| `POST /noncey/admin/marketplace/<id>/reject` | *(admin)* Reject → back to tested |
 
 ---
 
@@ -231,10 +269,9 @@ Flask is **never** exposed directly. Apache2 handles all external TLS and proxie
 
 ## 4. Configuration
 
-Single INI file: `/etc/noncey/noncey.conf` (template: `noncey.conf.example`).
+Single INI file: `/opt/noncey/daemon/etc/noncey.conf` (template: `noncey.conf.example`).
 
-Both `ingest.py` and `app.py` read this file at startup. The path can be overridden with
-the environment variable `NONCEY_CONF` (useful for testing).
+Both `ingest.py` and `app.py` read this file at startup. Override path with `NONCEY_CONF`.
 
 ### Sections
 
@@ -245,35 +282,21 @@ the environment variable `NONCEY_CONF` (useful for testing).
 | `domain` | — | The nonce email domain, e.g. `nonces.yourdomain.com` |
 | `admin_domain` | — | Admin VirtualHost FQDN |
 | `nonce_lifetime_h` | `2` | Hours until a stored nonce expires |
-| `archive_retention_d` | `30` | Days to keep archived .eml files (enforced by cron) |
+| `archive_retention_d` | `30` | Days to keep archived .eml files |
 | `flask_port` | `5000` | Flask listen port |
-| `secret_key` | — | **Required.** HMAC key for JWT signing. Generate with `python3 -c "import secrets; print(secrets.token_hex(32))"` |
+| `secret_key` | — | **Required.** HMAC key for JWT + Flask session signing |
 
-**`[mysql]`**
+**`[mysql]`** — consumed only by the install script; not used at runtime.
 
-| Key | Description |
-|---|---|
-| `host` | MySQL host (usually `localhost`) |
-| `user` | MySQL user — needs CONNECT + INSERT on `virtual_transport` for install; no grants needed at runtime |
-| `password` | MySQL password |
-| `database` | Postfix database name |
-
-**`[tls]`**
-
-| Key | Description |
-|---|---|
-| `cert` | Path to TLS certificate (fullchain) |
-| `key` | Path to TLS private key |
-
-Used by the Apache2 VirtualHost template in the install script.
+**`[tls]`** — cert/key paths used by the Apache2 VirtualHost template.
 
 **`[paths]`**
 
 | Key | Default | Description |
 |---|---|---|
-| `install_dir` | `/opt/noncey/daemon` | Application root — app code, venv, etc/, var/ all live here |
-| `db_path` | `/opt/noncey/daemon/var/noncey.db` | SQLite database file |
-| `archive_path` | `/opt/noncey/daemon/var/archive` | Root directory for .eml archives |
+| `install_dir` | `/opt/noncey/daemon` | Application root |
+| `db_path` | `…/var/noncey.db` | SQLite database |
+| `archive_path` | `…/var/archive` | .eml archive root |
 
 ---
 
@@ -282,40 +305,102 @@ Used by the Apache2 VirtualHost template in the install script.
 ```
 users
   id            PK
-  username      UNIQUE
-  password_hash bcrypt
+  username      UNIQUE NOT NULL
+  password_hash bcrypt NOT NULL
+  email         TEXT (optional, for admin contact)
+  is_admin      INTEGER DEFAULT 0
+  created_at    TEXT
 
-providers                        ← one per OTP service per user
-  id            PK
-  user_id       FK → users
-  tag           human label, e.g. "github"
-  nonce_start_marker  text that immediately precedes the OTP in the email body
-  nonce_end_marker    text that immediately follows (optional; defaults to EOL)
-  sample_email  optional raw email for reference/testing
+configurations                   ← named+versioned bundles of providers
+  id               PK
+  owner_id         FK → users (CASCADE)
+  name             TEXT NOT NULL
+  version          TEXT NOT NULL  (recommended: YYYYMM-NN)
+  description      TEXT
+  status           TEXT  draft|active|tested|pending_review|public
+  source_config_id FK → configurations (NULL = original; non-NULL = subscription/copy)
+  prompt_assigned  INTEGER DEFAULT 0  (set by Chrome extension when prompt is stored)
+  test_threshold   INTEGER DEFAULT 3  (extractions needed to advance active→tested)
+  test_count       INTEGER DEFAULT 0  (incremented by ingest.py on each nonce insert)
+  created_at       TEXT
+  updated_at       TEXT
+  UNIQUE(owner_id, name, version)
+
+providers                        ← one per OTP service, scoped to a configuration
+  id                 PK
+  user_id            FK → users (CASCADE)
+  config_id          FK → configurations (SET NULL on delete; NULL = unassigned/always-active)
+  tag                TEXT UNIQUE per user  (e.g. "github")
+  extract_source     body | subject
+  extract_mode       auto | markers | start_length
+  nonce_start_marker TEXT  (derived from example OTP in auto mode)
+  nonce_end_marker   TEXT  (optional; markers mode only)
+  nonce_length       INTEGER  (start_length and auto modes)
+  sample_email       TEXT  (raw email for reference; cleared on marketplace approval)
 
 provider_matchers                ← one or more matching rules per provider
-  id            PK
-  provider_id   FK → providers
-  sender_email  exact match on From address (optional)
-  subject_pattern  regex match on Subject (optional)
-  (a matcher fires if BOTH present conditions match)
+  id              PK
+  provider_id     FK → providers (CASCADE)
+  sender_email    exact match on From address (optional)
+  subject_pattern regex match on Subject (optional)
+  (a matcher fires when every set condition matches; provider needs ≥1 firing matcher)
 
-nonces                           ← short-lived; purged on expiry
-  id            PK
-  user_id       FK → users
-  provider_id   FK → providers
-  nonce_value   the extracted OTP string
-  received_at   ISO-8601 UTC
-  expires_at    ISO-8601 UTC  (= received_at + nonce_lifetime_h)
+nonces                           ← short-lived; purged on GET /api/nonces
+  id           PK
+  user_id      FK → users (CASCADE)
+  provider_id  FK → providers (CASCADE)
+  nonce_value  TEXT
+  received_at  ISO-8601 UTC
+  expires_at   ISO-8601 UTC  (= received_at + nonce_lifetime_h)
 
-sessions                         ← one row per active login
-  id            PK
-  user_id       FK → users
-  token_hash    SHA-256 of JWT  (the raw token is never stored)
-  created_at    ISO-8601 UTC
-  last_used_at  ISO-8601 UTC  (updated on every authenticated request)
-  expires_at    ISO-8601 UTC  (30 days from creation)
+sessions                         ← one row per active REST API login
+  id           PK
+  user_id      FK → users (CASCADE)
+  token_hash   SHA-256 of JWT (UNIQUE; raw token never stored)
+  created_at   ISO-8601 UTC
+  last_used_at ISO-8601 UTC
+  expires_at   ISO-8601 UTC  (30 days from creation)
+
+unmatched_emails                 ← emails that matched no provider; await user review
+  id          PK
+  user_id     FK → users (CASCADE)
+  sender      TEXT
+  fwd_sender  TEXT  (innermost forwarded-from address, if email was forwarded)
+  subject     TEXT
+  body_text   TEXT  (hidden in UI when user has public configurations)
+  received_at ISO-8601 UTC
+
+marketplace_reviews              ← admin audit trail for approve/reject decisions
+  id          PK
+  config_id   FK → configurations (CASCADE)
+  reviewer_id FK → users (SET NULL)
+  decision    approved | rejected
+  note        TEXT (optional rejection reason)
+  reviewed_at ISO-8601 UTC
 ```
+
+### Configuration status lifecycle
+
+```
+draft  ──(activate: needs ≥1 provider+matcher)──▶  active
+                                                       │
+                                             test_count ≥ test_threshold
+                                             (auto-advanced by ingest.py)
+                                                       │
+                                                       ▼
+public ◀──(admin approve)── pending_review ◀──(submit)── tested
+  │                                ▲
+  │                         (admin reject)
+  └────────────────────────────────┘  (back to tested; owner revises and resubmits)
+```
+
+### Subscription model
+
+A subscription is a `configurations` row with `source_config_id IS NOT NULL` pointing to
+the public original. `_copy_providers()` copies all providers+matchers at subscribe time,
+clearing `sample_email` for privacy. Tag collisions are resolved by suffixing (`_1`, `_2`).
+"Update available" is detected by querying for a newer public config with the same
+`(owner_id, name)` and a higher `version` string (lexicographic; YYYYMM-NN format works).
 
 ---
 
@@ -325,159 +410,149 @@ sessions                         ← one row per active login
 
 **Timing-safe login.**
 `bcrypt.checkpw` is always executed, even when the username does not exist (a dummy hash
-is used). This prevents username enumeration via response-time differences.
+is used). Prevents username enumeration via response-time differences.
 
 **Token stored as hash, not plaintext.**
-The JWT is hashed (SHA-256) before being stored in `sessions.token_hash`. If the database
-is read by an attacker, the raw tokens cannot be recovered and replayed.
+JWT is SHA-256 hashed before storage in `sessions.token_hash`. A stolen DB cannot be used
+to replay sessions.
 
 **No `exp` claim in JWT.**
-Expiry is enforced exclusively by `sessions.expires_at` in the database. This means a
-token can be revoked instantly (logout, admin action) without waiting for a JWT expiry
-window. The trade-off is that every authenticated request requires a DB round-trip — which
-is acceptable given Flask already queries SQLite on every request anyway.
+Expiry is enforced exclusively by `sessions.expires_at`. Tokens can be revoked instantly
+(logout, admin action) without a JWT expiry window.
+
+**Flask session (admin UI) vs JWT (REST API).**
+The admin UI uses a signed cookie session managed entirely by Flask — no Apache BasicAuth.
+The REST API (used by the extension) uses Bearer JWT. The two auth systems share the same
+`secret_key` but operate independently.
+
+**Privacy: sample_email cleared on approval.**
+When a configuration is approved for the marketplace, all `sample_email` fields on its
+providers are set to NULL. Unmatched email bodies are hidden in the UI for users who have
+any public configuration.
 
 **Flask bound to localhost only.**
-`app.run(host='127.0.0.1')` and the systemd unit ensure Flask is never reachable from the
-network directly. All external traffic goes through Apache2, which handles TLS and can
-apply rate-limiting, IP allowlisting, or other controls independently of the application.
+Never reachable from the network directly; all external traffic goes through Apache2.
 
 **Minimal MySQL permissions.**
-The `noncey` MySQL user has `INSERT` and `DELETE` on `virtual_aliases` and
-`virtual_transport` only. It cannot read the rest of the Postfix database, and cannot
-modify table structure. Compromise of this credential does not expose mail routing for
-other domains.
-
-**Dedicated system user.**
-`ingest.py` and `app.py` run as the `noncey` system user (no login shell, no sudo). File
-permissions on `/var/lib/noncey/` and `/opt/noncey/` are scoped to this user.
+Used only by the install script; `ingest.py` and `app.py` never connect to MySQL at runtime.
 
 ### Maintenance
 
 **Lazy nonce expiry.**
-Expired nonces are deleted on `GET /api/nonces` rather than by a dedicated cron job. This
-keeps the row count low for active users without requiring a separate scheduled process.
-For users who stop polling (e.g. logged out of the extension) old rows persist until next
-login — acceptable given the 2-hour TTL.
+Expired nonces are deleted on `GET /api/nonces` rather than by a dedicated cron job.
 
-**Email archive for debugging.**
-Every inbound email is written to `/var/lib/noncey/archive/{username}/` as a timestamped
-.eml file, including emails that did not match any provider. This is the primary debugging
-tool when nonce extraction fails silently. Retention is enforced by a cron job
-(configured by the install script) using `find ... -mtime +N -delete`.
+**Auto test counting.**
+`ingest.py` increments `test_count` on every successful nonce INSERT for a configuration
+in `active` status, and automatically transitions to `tested` when the threshold is reached.
+No polling or cron needed.
 
-**Idempotent schema initialisation.**
-`flask init-db` executes `schema.sql` which uses `CREATE TABLE IF NOT EXISTS` throughout.
-It is safe to run on an existing database — useful after upgrades that add new tables.
-
-**Single config file.**
-Both `ingest.py` (spawned by Postfix per message) and `app.py` (long-running Flask
-process) read the same `/etc/noncey/noncey.conf`. There is one source of truth for paths,
-credentials, and tunables. Config reload for Flask requires a service restart; `ingest.py`
-re-reads config on every invocation.
+**Idempotent schema initialisation + migrations.**
+`flask init-db` runs `schema.sql` (uses `CREATE TABLE IF NOT EXISTS`). Column additions for
+existing databases are handled by the `ALTER TABLE ADD COLUMN` migration block in
+`install.sh`, guarded by `PRAGMA table_info` checks.
 
 ### Postfix Integration
 
 **Transport-level routing, no per-user alias rows.**
-The entire `nonces.yourdomain.com` domain is routed to the `nonce-pipe` transport via a
-single row in `virtual_transport`. Postfix would normally reject any address not found in
-`virtual_alias_maps`; rather than maintaining a row per user, a dedicated MySQL map file
-(`nonce_accept.cf`) is added to `virtual_alias_maps` at install time with the query:
+`nonce_accept.cf` (domain-level MySQL map) accepts all addresses at the nonce domain with
+a single row. `ingest.py` resolves the actual user from the local part at runtime.
 
-```sql
-SELECT '%s' WHERE '%d' = 'nonces.yourdomain.com'
-```
-
-Postfix substitutes `%s` → full recipient address and `%d` → domain before executing.
-For any `@nonces.yourdomain.com` address this always returns one row — the address itself —
-without touching any table. User create/delete therefore requires no MySQL operations at
-all. The `[mysql]` config section is consumed only by the install script when writing
-`nonce_accept.cf`; the running Flask app and `ingest.py` never connect to MySQL.
-
-**Pipe flags `Rq`.**
-`R` prepends a `Return-Path:` header. `q` quotes special characters in the recipient
-address. Together they match Postfix's `local` delivery defaults and ensure `ingest.py`
-receives a clean, parseable recipient argument.
-
-**`maxproc=1` on the pipe transport.**
-The pipe transport entry in `master.cf` sets `maxproc=1` so that concurrent email
-deliveries to the same user do not race on SQLite writes. Postfix will queue and serialise.
-
-**Postfix exit code contract.**
-`ingest.py` exits with standard `sysexits.h` codes:
-
-| Code | Value | Meaning to Postfix |
-|---|---|---|
-| `EX_OK` | 0 | Accepted — message consumed |
-| `EX_DATAERR` | 65 | Bad message data — bounce to sender |
-| `EX_NOUSER` | 67 | Unknown recipient — bounce |
-| `EX_TEMPFAIL` | 75 | Transient error — Postfix will retry |
-
-Config errors and DB open failures use `EX_TEMPFAIL` so messages are not lost while the
-service is being repaired.
-
-### Provider Matching
-
-**Regex subject matching.**
-`subject_pattern` is a Python `re.search` pattern, not a substring match. This handles
-subjects like `"Your 6-digit code is ready"` where the interesting content is elsewhere,
-or localised subjects that vary by region. The pattern is case-insensitive.
-
-**Both matcher fields optional.**
-A matcher with only `sender_email` set matches any subject from that sender. A matcher
-with only `subject_pattern` set matches that subject from any sender. Both empty matches
-everything (useful for a catch-all provider during initial setup).
-
-**Start/end marker extraction.**
-Rather than a regex on the nonce itself (which varies by provider), the user configures
-the static text that immediately surrounds the OTP in the email body. This is more stable
-across OTP format changes (4-digit → 6-digit, numeric → alphanumeric) and avoids false
-positives on other numbers in the email.
+**`maxproc=1`.**
+Serialises deliveries to prevent concurrent SQLite writes.
 
 ### API Design
 
 **`age_seconds` field.**
-The extension calculates display age from `age_seconds` (server-computed at query time)
-rather than parsing `received_at` and comparing to the client clock. This avoids clock
-skew issues when the user's machine and the server disagree on the current time.
+Computed server-side to avoid client clock skew when displaying nonce age.
 
-**Nonce ownership enforced at DELETE.**
-`DELETE /api/nonces/<id>` filters on both `id` and `user_id`. A JWT from user A cannot
-delete user B's nonces even if the ID is known.
-
-**`/api/` prefix on all REST routes.**
-Apache2 proxies only requests matching `/api/` to Flask, leaving other paths available
-for static files or future services without reconfiguring the application.
+**`configuration_name` field.**
+Added to `GET /api/nonces` so the extension can group or label nonces by configuration,
+not just provider tag.
 
 ---
 
-## 7. Operational Notes
+## 7. Planned Chrome Extension Changes
+
+The following changes to `noncey.client.chromeextension` are planned but **not yet
+implemented**. They are noted here to preserve design intent across context boundaries.
+
+### 7a. Configuration-aware display
+
+Currently the extension groups nonces by `provider_tag`. With configurations:
+
+- Group nonces by `configuration_name` (from the new API field) as the primary label.
+- `provider_tag` becomes secondary / used for disambiguation when one config has multiple providers.
+- Show `configuration_name` in the popup dropdown header.
+
+### 7b. Configuration selection / active config
+
+- The extension should allow the user to select which configuration is "active" (or all).
+- Active configuration determines which nonces are surfaced automatically vs hidden.
+- Selection stored in `chrome.storage.local` as `{ activeConfigName: "github-otp" | null }`.
+  `null` = show all.
+
+### 7c. Prompt storage (`prompt_assigned` flag)
+
+- Each public configuration has an optional "prompt" — instructions for how to fill the OTP
+  field (CSS selector, iframe handling, multi-step flows, etc.).
+- The prompt lives in the extension (not the daemon) since it is browser-side logic.
+- Storage: `chrome.storage.sync` keyed by `"prompt:" + configName + ":" + configVersion`.
+- When a user subscribes to a public configuration, the extension checks if a prompt is
+  already stored for that `(name, version)`. If not, the user is prompted to enter one
+  (or it can be left blank for manual fill).
+- `prompt_assigned` on the daemon side is a boolean flag set via a new API endpoint
+  (`POST /api/configs/<id>/prompt-assigned`) once the extension stores a prompt. The flag
+  is used in the marketplace UI to indicate to prospective subscribers whether a prompt
+  is available.
+
+### 7d. New API endpoint needed (daemon side)
+
+```
+POST /api/configs/<id>/prompt-assigned
+Authorization: Bearer <jwt>
+```
+Sets `configurations.prompt_assigned = 1` for the given config (owned by the caller).
+Response: `204 No Content`. This endpoint does not exist yet in `app.py`.
+
+### 7e. Popup UX changes
+
+- Add a "Configuration" section in the popup above the nonce list.
+- Show current active config name + version.
+- "Change" button opens a config selector (lists configs from `GET /api/nonces` response
+  unique `configuration_name` values, or a dedicated `GET /api/configs` endpoint).
+- Nonce list filtered accordingly.
+
+### 7f. Potential new REST endpoint
+
+`GET /api/configs` — list the authenticated user's active configurations (name, version,
+prompt_assigned, provider_tags). Allows the extension to populate the config selector
+without waiting for a nonce to arrive. Not strictly required if the extension derives the
+list from nonce history, but improves UX for fresh installs.
+
+---
+
+## 8. Operational Notes
 
 ### Installation layout
 
-All noncey files live under `/opt/noncey/`. The install script manages the full lifecycle.
-
 ```
 /opt/noncey/
-  daemon/                         ← Component A root (maps to noncey.daemon/ in source)
-    *.py, templates/, schema.sql  ← application code (root:root, world-readable)
+  daemon/                         ← noncey.daemon source root
+    *.py, templates/, schema.sql  ← application code (root:root)
     venv/                         ← Python virtualenv (noncey:noncey)
-    etc/                          ← config + generated service/map files (root:root 755)
-      noncey.conf                 ← main config, user-created  (root:noncey 640)
+    etc/                          ← config + generated files (root:root 755)
+      noncey.conf                 ← main config  (root:noncey 640)
       nonce_accept.cf             ← Postfix map  (root:postfix 640)
-      noncey-nonces.conf          ← Apache2 VirtualHost  (root:root 644)
-      noncey-admin-proxy.conf     ← Apache2 ProxyPass snippet  (root:root 644)
-      noncey.service              ← systemd unit  (root:root 644)
-      noncey.cron                 ← cron job  (root:root 644)
+      noncey-nonces.conf          ← Apache2 VirtualHost
+      noncey-admin-proxy.conf     ← Apache2 ProxyPass snippet
+      noncey.service              ← systemd unit
+      noncey.cron                 ← cron job
     var/                          ← runtime data  (noncey:noncey 750)
       noncey.db                   ← SQLite database
       archive/                    ← flat .eml archive
-
-  common/                         ← reserved for shared components (currently unused)
 ```
 
-Files outside `/opt/noncey/` are **symlinks** or **idempotent in-place edits**, never
-standalone copies:
+Files outside `/opt/noncey/` are symlinks or idempotent edits:
 
 | System path | Type | Points to |
 |---|---|---|
@@ -485,77 +560,29 @@ standalone copies:
 | `/etc/apache2/sites-available/noncey-nonces.conf` | symlink | `…/daemon/etc/noncey-nonces.conf` |
 | `/etc/systemd/system/noncey.service` | symlink | `…/daemon/etc/noncey.service` |
 | `/etc/cron.d/noncey` | symlink | `…/daemon/etc/noncey.cron` |
-| `/etc/postfix/main.cf` | edited | `virtual_alias_maps` line appended via `postconf -e` |
-| `/etc/postfix/master.cf` | edited | `nonce-pipe` transport block appended (grep-guarded) |
+| `/etc/postfix/main.cf` | edited | `virtual_alias_maps` appended via `postconf -e` |
+| `/etc/postfix/master.cf` | edited | `nonce-pipe` transport block appended |
 
-### Pre-install setup
+### Apache2 admin VirtualHost
 
-```bash
-mkdir -p /opt/noncey/daemon/etc
-cp /path/to/noncey/noncey.daemon/noncey.conf.example \
-   /opt/noncey/daemon/etc/noncey.conf
-editor /opt/noncey/daemon/etc/noncey.conf     # fill in all values
-sudo ./install.sh                             # optionally: ./install.sh /custom/path/noncey.conf
-```
-
-### Postfix `nonce_accept.cf` (generated by install script)
-
-```ini
-# /opt/noncey/daemon/etc/nonce_accept.cf  (symlinked to /etc/postfix/nonce_accept.cf)
-hosts    = localhost
-user     = <mysql.user>
-password = <mysql.password>
-dbname   = <mysql.database>
-query    = SELECT '%s' WHERE '%d' = 'nonces.yourdomain.com'
-```
-
-Appended to `virtual_alias_maps` in `main.cf` by `postconf -e`:
-```
-virtual_alias_maps = mysql:/etc/postfix/mysql-virtual-aliases.cf,
-                     mysql:/etc/postfix/nonce_accept.cf
-```
-
-### Postfix `master.cf` entry (appended by install script)
-
-```
-nonce-pipe  unix  -  n  n  -  1  pipe
-  flags=Rq user=noncey argv=/opt/noncey/daemon/venv/bin/python3 \
-    /opt/noncey/daemon/ingest.py ${recipient}
-```
-`maxproc=1` serialises deliveries to prevent concurrent SQLite writes.
-
-### Apache2 VirtualHost (nonces domain)
-
-Generated at `/opt/noncey/daemon/etc/noncey-nonces.conf`, symlinked to
-`/etc/apache2/sites-available/`, enabled with `a2ensite`.
-
-### Apache2 admin VirtualHost (manual step)
-
-The install script writes a ready-to-include snippet at
-`/opt/noncey/daemon/etc/noncey-admin-proxy.conf`. Add to the admin VirtualHost:
+Authentication is now handled entirely by Flask sessions. The admin VirtualHost no longer
+needs `AuthType`/`AuthUserFile` directives — only the ProxyPass is required:
 
 ```apache
 <VirtualHost *:443>
     ServerName admin.yourdomain.com
-    # ... existing SSL and auth config ...
-
+    # ... SSL config ...
     Include /opt/noncey/daemon/etc/noncey-admin-proxy.conf
 </VirtualHost>
 ```
 
-### systemd unit
-
-Generated at `/opt/noncey/daemon/etc/noncey.service`, symlinked to
-`/etc/systemd/system/noncey.service`.
-
 ### cron — archive cleanup
 
-Generated at `/opt/noncey/daemon/etc/noncey.cron`, symlinked to `/etc/cron.d/noncey`.
 Runs daily at 03:00; retention controlled by `archive_retention_d` in config.
 
 ---
 
-## 8. Migration Checklist
+## 9. Migration Checklist
 
 When moving to a new server:
 
@@ -567,9 +594,9 @@ When moving to a new server:
 - [ ] Run `sudo ./install.sh` — recreates user, dirs, venv, all symlinks, and system edits
 - [ ] Re-insert `virtual_transport` row for the nonce domain
 - [ ] Re-create `nonce_accept.cf` and ensure it is in `virtual_alias_maps` in `main.cf`
-- [ ] No per-user `virtual_aliases` rows needed — the map file covers all addresses at the domain
-- [ ] Re-apply `master.cf` pipe transport entry; `postfix reload`
-- [ ] Re-apply Apache2 VirtualHost blocks; `apache2ctl configtest && systemctl reload apache2`
+- [ ] No per-user `virtual_aliases` rows needed
+- [ ] Re-apply `master.cf` pipe transport; `postfix reload`
+- [ ] Re-apply Apache2 VirtualHost (no BasicAuth needed now — Flask handles auth)
 - [ ] Enable and start `noncey.service`
-- [ ] Update DNS MX record for `nonces.yourdomain.com` to point to new server
-- [ ] Verify: send a test email and confirm it appears via `GET /api/nonces`
+- [ ] Update DNS MX record for `nonces.yourdomain.com` to new server
+- [ ] Verify: send test email → appears via `GET /api/nonces`
