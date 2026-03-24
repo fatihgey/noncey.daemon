@@ -194,6 +194,53 @@ ok "Dependencies installed."
 
 # =============================================================================
 step "Database initialisation"
+
+# Run column migrations BEFORE flask init-db so that existing tables already
+# have all new columns when schema.sql tries to create indexes on them.
+# Each migration is guarded by both a table-existence check (no-op on fresh
+# installs where the table does not exist yet) and a column-existence check
+# (idempotent on repeat runs).
+sudo -u noncey "$VENV/bin/python3" - "$DB_PATH" <<'PY'
+import sys, sqlite3
+db = sqlite3.connect(sys.argv[1])
+
+tables = {r[0] for r in db.execute(
+    "SELECT name FROM sqlite_master WHERE type='table'"
+).fetchall()}
+
+if 'providers' in tables:
+    cols = {r[1] for r in db.execute("PRAGMA table_info(providers)").fetchall()}
+    for col, sql in [
+        ("extract_source", "ALTER TABLE providers ADD COLUMN extract_source TEXT NOT NULL DEFAULT 'body'"),
+        ("extract_mode",   "ALTER TABLE providers ADD COLUMN extract_mode   TEXT NOT NULL DEFAULT 'auto'"),
+        ("nonce_length",   "ALTER TABLE providers ADD COLUMN nonce_length   INTEGER"),
+        ("config_id",      "ALTER TABLE providers ADD COLUMN config_id INTEGER REFERENCES configurations(id) ON DELETE SET NULL"),
+    ]:
+        if col not in cols:
+            db.execute(sql)
+
+if 'unmatched_emails' in tables:
+    cols = {r[1] for r in db.execute("PRAGMA table_info(unmatched_emails)").fetchall()}
+    for col, sql in [
+        ("fwd_sender", "ALTER TABLE unmatched_emails ADD COLUMN fwd_sender TEXT"),
+    ]:
+        if col not in cols:
+            db.execute(sql)
+
+if 'users' in tables:
+    cols = {r[1] for r in db.execute("PRAGMA table_info(users)").fetchall()}
+    for col, sql in [
+        ("email",    "ALTER TABLE users ADD COLUMN email    TEXT DEFAULT NULL"),
+        ("is_admin", "ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0"),
+    ]:
+        if col not in cols:
+            db.execute(sql)
+
+db.commit()
+db.close()
+PY
+ok "Column migrations applied."
+
 (
     cd "$INSTALL_DIR"
     sudo -u noncey \
@@ -202,42 +249,6 @@ step "Database initialisation"
 )
 [[ -f "$DB_PATH" ]] && chown noncey:noncey "$DB_PATH" && chmod 640 "$DB_PATH"
 ok "Schema initialised: $DB_PATH"
-
-# Migrate providers table for existing databases (new columns added over time).
-# ALTER TABLE ADD COLUMN is idempotent when guarded by PRAGMA table_info.
-sudo -u noncey "$VENV/bin/python3" - "$DB_PATH" <<'PY'
-import sys, sqlite3
-db = sqlite3.connect(sys.argv[1])
-
-cols = {r[1] for r in db.execute("PRAGMA table_info(providers)").fetchall()}
-for col, sql in [
-    ("extract_source", "ALTER TABLE providers ADD COLUMN extract_source TEXT NOT NULL DEFAULT 'body'"),
-    ("extract_mode",   "ALTER TABLE providers ADD COLUMN extract_mode   TEXT NOT NULL DEFAULT 'auto'"),
-    ("nonce_length",   "ALTER TABLE providers ADD COLUMN nonce_length   INTEGER"),
-    ("config_id",      "ALTER TABLE providers ADD COLUMN config_id INTEGER REFERENCES configurations(id) ON DELETE SET NULL"),
-]:
-    if col not in cols:
-        db.execute(sql)
-
-ucols = {r[1] for r in db.execute("PRAGMA table_info(unmatched_emails)").fetchall()}
-for col, sql in [
-    ("fwd_sender", "ALTER TABLE unmatched_emails ADD COLUMN fwd_sender TEXT"),
-]:
-    if col not in ucols:
-        db.execute(sql)
-
-ucols = {r[1] for r in db.execute("PRAGMA table_info(users)").fetchall()}
-for col, sql in [
-    ("email",    "ALTER TABLE users ADD COLUMN email    TEXT DEFAULT NULL"),
-    ("is_admin", "ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0"),
-]:
-    if col not in ucols:
-        db.execute(sql)
-
-db.commit()
-db.close()
-PY
-ok "Migration complete."
 
 # =============================================================================
 step "Postfix: ${ETC_DIR}/nonce_accept.cf"
