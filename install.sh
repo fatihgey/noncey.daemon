@@ -242,22 +242,34 @@ else
 fi
 
 # =============================================================================
+step "Postfix: ingest-pipe wrapper  (${INSTALL_DIR}/ingest-pipe)"
+# A small wrapper script that sets NONCEY_CONF before exec'ing ingest.py.
+# Using a wrapper avoids relying on the pipe(8) env= attribute, which is
+# parsed by the Postfix pipe daemon and can fail on some builds.
+cat > "${INSTALL_DIR}/ingest-pipe" <<EOF
+#!/bin/bash
+export NONCEY_CONF=${CONF}
+exec ${VENV}/bin/python3 ${INSTALL_DIR}/ingest.py "\$@"
+EOF
+chmod 755 "${INSTALL_DIR}/ingest-pipe"
+chown root:root "${INSTALL_DIR}/ingest-pipe"
+ok "Wrapper written: ${INSTALL_DIR}/ingest-pipe"
+
+# =============================================================================
 step "Postfix: nonce-pipe transport  (master.cf)"
 MASTER_CF="/etc/postfix/master.cf"
 if grep -q "^nonce-pipe" "$MASTER_CF"; then
-    # Update existing entry in case CONF path changed (e.g. after re-install).
-    sed -i "s|env=NONCEY_CONF=[^ ]*|env=NONCEY_CONF=${CONF}|" "$MASTER_CF"
-    ok "nonce-pipe already present in master.cf (env path refreshed)."
+    # Refresh the argv path in case INSTALL_DIR changed.
+    sed -i "s|argv=.*/ingest-pipe|argv=${INSTALL_DIR}/ingest-pipe|" "$MASTER_CF"
+    ok "nonce-pipe already present in master.cf (argv refreshed)."
 else
     cp "$MASTER_CF" "${MASTER_CF}.pre-noncey.$(date +%Y%m%d%H%M%S)"
     # maxproc=1 serialises deliveries, preventing concurrent SQLite writes.
-    # env= passes NONCEY_CONF explicitly — Postfix strips the environment
-    # before invoking pipe transports, so it cannot be inherited.
     cat >> "$MASTER_CF" <<EOF
 
 # ── noncey OTP relay ──────────────────────────────────────────────────────────
 nonce-pipe  unix  -  n  n  -  1  pipe
-  flags=Rq user=noncey env=NONCEY_CONF=${CONF} argv=${VENV}/bin/python3 ${INSTALL_DIR}/ingest.py \${recipient}
+  flags=Rq user=noncey argv=${INSTALL_DIR}/ingest-pipe \${recipient}
 EOF
     ok "nonce-pipe entry added to master.cf."
 fi
