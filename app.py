@@ -8,6 +8,8 @@ REST endpoints (all under /api/):
   POST   /api/auth/logout
   GET    /api/nonces
   DELETE /api/nonces/<id>
+  GET    /api/configs
+  POST   /api/configs/<id>/prompt-assigned
 
 Admin UI (all under /noncey/, proxied via admin VirtualHost):
   see admin.py
@@ -221,6 +223,51 @@ def delete_nonce(nonce_id: int):
     cur = db.execute(
         "DELETE FROM nonces WHERE id = ? AND user_id = ?",
         (nonce_id, g.user_id)
+    )
+    db.commit()
+    if cur.rowcount == 0:
+        return jsonify({'error': 'Not found'}), 404
+    return '', 204
+
+
+@app.get('/api/configs')
+@require_auth
+def list_configs():
+    db   = get_db()
+    rows = db.execute(
+        "SELECT id, name, version, status, prompt_assigned "
+        "FROM   configurations "
+        "WHERE  owner_id = ? "
+        "  AND  status IN ('active','tested','pending_review','public') "
+        "ORDER  BY name, version",
+        (g.user_id,)
+    ).fetchall()
+
+    result = []
+    for row in rows:
+        tags = db.execute(
+            "SELECT tag FROM providers WHERE config_id = ? AND user_id = ?",
+            (row['id'], g.user_id)
+        ).fetchall()
+        result.append({
+            'id':              row['id'],
+            'name':            row['name'],
+            'version':         row['version'],
+            'status':          row['status'],
+            'prompt_assigned': bool(row['prompt_assigned']),
+            'provider_tags':   [t['tag'] for t in tags],
+        })
+    return jsonify(result), 200
+
+
+@app.post('/api/configs/<int:config_id>/prompt-assigned')
+@require_auth
+def set_prompt_assigned(config_id: int):
+    db  = get_db()
+    cur = db.execute(
+        "UPDATE configurations SET prompt_assigned = 1 "
+        "WHERE  id = ? AND owner_id = ?",
+        (config_id, g.user_id)
     )
     db.commit()
     if cur.rowcount == 0:
