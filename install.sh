@@ -83,7 +83,6 @@ python3 -c "import ensurepip" 2>/dev/null \
 
 # ── Parse and validate config ─────────────────────────────────────────────────
 DOMAIN=$(conf general domain)
-ADMIN_DOMAIN=$(conf general admin_domain)
 FLASK_PORT=$(conf general flask_port);              FLASK_PORT=${FLASK_PORT:-5000}
 ARCHIVE_RETENTION=$(conf general archive_retention_d); ARCHIVE_RETENTION=${ARCHIVE_RETENTION:-30}
 SECRET_KEY=$(conf general secret_key)
@@ -105,7 +104,7 @@ VAR_DIR="${INSTALL_DIR}/var"
 VENV="${INSTALL_DIR}/venv"
 
 for pair in \
-    "DOMAIN:general.domain"         "ADMIN_DOMAIN:general.admin_domain" \
+    "DOMAIN:general.domain" \
     "SECRET_KEY:general.secret_key" \
     "MYSQL_USER:mysql.user"         "MYSQL_PASS:mysql.password" \
     "MYSQL_DB:mysql.database" \
@@ -383,11 +382,18 @@ cat > "${ETC_DIR}/noncey-nonces.conf" <<EOF
     SSLCertificateKeyFile ${TLS_KEY}
 
     ProxyPreserveHost On
-    ProxyPass        /api/ http://127.0.0.1:${FLASK_PORT}/api/
-    ProxyPassReverse /api/ http://127.0.0.1:${FLASK_PORT}/api/
 
-    ErrorLog  \${APACHE_LOG_DIR}/noncey-nonces-error.log
-    CustomLog \${APACHE_LOG_DIR}/noncey-nonces-access.log combined
+    # REST API (Chrome extension)
+    ProxyPass        /api/    http://127.0.0.1:${FLASK_PORT}/api/
+    ProxyPassReverse /api/    http://127.0.0.1:${FLASK_PORT}/api/
+
+    # User / admin UI
+    RedirectMatch permanent ^/noncey$ /noncey/
+    ProxyPass        /noncey/ http://127.0.0.1:${FLASK_PORT}/noncey/
+    ProxyPassReverse /noncey/ http://127.0.0.1:${FLASK_PORT}/noncey/
+
+    ErrorLog  \${APACHE_LOG_DIR}/noncey-error.log
+    CustomLog \${APACHE_LOG_DIR}/noncey-access.log combined
 </VirtualHost>
 EOF
 chown root:root "${ETC_DIR}/noncey-nonces.conf"
@@ -395,20 +401,6 @@ chmod 644       "${ETC_DIR}/noncey-nonces.conf"
 
 make_symlink "${ETC_DIR}/noncey-nonces.conf" \
     /etc/apache2/sites-available/noncey-nonces.conf
-
-# Admin proxy snippet — written for manual Include into admin VirtualHost
-cat > "${ETC_DIR}/noncey-admin-proxy.conf" <<EOF
-    # noncey admin UI
-    # Include this file inside your ${ADMIN_DOMAIN} <VirtualHost> block:
-    #   Include ${ETC_DIR}/noncey-admin-proxy.conf
-    RedirectMatch permanent ^/noncey$ /noncey/
-    ProxyPreserveHost On
-    ProxyPass        /noncey/ http://127.0.0.1:${FLASK_PORT}/noncey/
-    ProxyPassReverse /noncey/ http://127.0.0.1:${FLASK_PORT}/noncey/
-EOF
-chown root:root "${ETC_DIR}/noncey-admin-proxy.conf"
-chmod 644       "${ETC_DIR}/noncey-admin-proxy.conf"
-ok "Written: ${ETC_DIR}/noncey-admin-proxy.conf  (see manual steps)"
 
 # =============================================================================
 step "Apache2: enable modules + site"
@@ -492,16 +484,6 @@ ${BOLD}A — Register the nonce domain in Postfix virtual_alias_domains${NC}
   Adapt the table/column names to your schema if needed, then:
 
     systemctl reload postfix
-
-${BOLD}B — Add the admin proxy to your Apache2 admin VirtualHost${NC}
-
-  Find the <VirtualHost> block for '${ADMIN_DOMAIN}' and add:
-
-    Include ${ETC_DIR}/noncey-admin-proxy.conf
-
-  Then test and reload:
-
-    apache2ctl configtest && systemctl reload apache2
 
 ${BOLD}Verify${NC}
 

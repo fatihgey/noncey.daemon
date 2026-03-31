@@ -1,6 +1,5 @@
 [general]
 domain              = nonces.yourdomain.com
-admin_domain        = admin.yourdomain.com
 nonce_lifetime_h    = 2
 archive_retention_d = 30
 flask_port          = 5000

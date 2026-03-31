@@ -23,11 +23,10 @@ reference for migrations, server rebuilds, and future contributors.
  │  ┌────┴───────────────────────────────┐        │           │
  │  │  Apache2                           │        │           │
  │  │  :443  nonces.yourdomain.com       │  ┌─────▼──────┐   │
- │  │    /api/  ──proxy──▶ Flask :5000   │  │  app.py    │   │
- │  │                                    │  │  (Flask)   │   │
- │  │  :443  admin.yourdomain.com        │  └─────┬──────┘   │
- │  │    /noncey/ ──proxy──▶ Flask :5000 │        │           │
- │  └────────────────────────────────────┘        │           │
+ │  │    /api/    ──proxy──▶ Flask :5000 │  │  app.py    │   │
+ │  │    /noncey/ ──proxy──▶ Flask :5000 │  │  (Flask)   │   │
+ │  └────────────────────────────────────┘  └─────┬──────┘   │
+ │                                                │           │
  │                                                │           │
  │  ┌──────────────────────────────────┐          │           │
  │  │  MySQL  (Postfix virtual maps)   │◀─────────┘           │
@@ -134,7 +133,7 @@ Extension
 ### 2c. User / configuration provisioning
 
 ```
-User (authenticated web UI at admin.yourdomain.com/noncey/)
+User (authenticated web UI at nonces.yourdomain.com/noncey/)
   │
   ├─ self-service: change password, download Gmail filter XML
   ├─ configuration CRUD: create → add providers + matchers → activate
@@ -311,7 +310,6 @@ Both `ingest.py` and `app.py` read this file at startup. Override path with `NON
 | Key | Default | Description |
 |---|---|---|
 | `domain` | — | The nonce email domain, e.g. `nonces.yourdomain.com` |
-| `admin_domain` | — | Admin VirtualHost FQDN |
 | `nonce_lifetime_h` | `2` | Hours until a stored nonce expires |
 | `archive_retention_d` | `30` | Days to keep archived .eml files |
 | `flask_port` | `5000` | Flask listen port |
@@ -574,8 +572,7 @@ list from nonce history, but improves UX for fresh installs.
     etc/                          ← config + generated files (root:root 755)
       noncey.conf                 ← main config  (root:noncey 640)
       nonce_accept.cf             ← Postfix map  (root:postfix 640)
-      noncey-nonces.conf          ← Apache2 VirtualHost
-      noncey-admin-proxy.conf     ← Apache2 ProxyPass snippet
+      noncey-nonces.conf          ← Apache2 VirtualHost (API + UI)
       noncey.service              ← systemd unit
       noncey.cron                 ← cron job
     var/                          ← runtime data  (noncey:noncey 750)
@@ -594,18 +591,12 @@ Files outside `/opt/noncey/` are symlinks or idempotent edits:
 | `/etc/postfix/main.cf` | edited | `virtual_alias_maps` appended via `postconf -e` |
 | `/etc/postfix/master.cf` | edited | `nonce-pipe` transport block appended |
 
-### Apache2 admin VirtualHost
+### Apache2 VirtualHost
 
-Authentication is now handled entirely by Flask sessions. The admin VirtualHost no longer
-needs `AuthType`/`AuthUserFile` directives — only the ProxyPass is required:
-
-```apache
-<VirtualHost *:443>
-    ServerName admin.yourdomain.com
-    # ... SSL config ...
-    Include /opt/noncey/daemon/etc/noncey-admin-proxy.conf
-</VirtualHost>
-```
+Both the REST API (`/api/`) and the user/admin UI (`/noncey/`) are served from
+the same VirtualHost (`nonces.yourdomain.com`). The generated `noncey-nonces.conf`
+contains both ProxyPass directives and is symlinked into `sites-available/` by
+`install.sh`. No separate admin VirtualHost or manually-included snippet is needed.
 
 ### cron — archive cleanup
 
