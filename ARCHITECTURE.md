@@ -631,3 +631,37 @@ When moving to a new server:
 - [ ] Enable and start `noncey.service`
 - [ ] Update DNS MX record for `nonces.yourdomain.com` to new server
 - [ ] Verify: send test email → appears via `GET /api/nonces`
+
+---
+
+## 10. Chrome Extension Client — Windows Installation
+
+The extension repository (`noncey.client.chromeextension`) ships an `install.bat`
+script for Windows. It must be run from a Command Prompt opened in the root of the
+cloned repository.
+
+### Running the installer
+
+```
+install.bat
+```
+
+The script self-elevates to Administrator if needed, then:
+
+1. Creates `C:\Program Files\noncey\client\` (if it does not exist)
+2. Copies `manifest.json`, `background.js`, `content.js`, `picker.js`
+3. Copies the `popup\` and `options\` subdirectories
+
+### Loading in Chrome (first run)
+
+After the installer completes:
+
+1. Open Chrome → `chrome://extensions`
+2. Enable **Developer mode** (toggle, top-right)
+3. Click **Load unpacked**
+4. Select `C:\Program Files\noncey\client\`
+
+### Updating
+
+After pulling changes from the repository, re-run `install.bat`, then click
+the **↺** reload button next to noncey in `chrome://extensions`.
