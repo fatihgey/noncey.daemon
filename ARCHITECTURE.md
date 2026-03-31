@@ -217,6 +217,37 @@ Response: `204 No Content`, or `404` if not found / not owned by caller.
 
 ---
 
+#### `GET /api/configs`
+Return the authenticated user's configurations that are in an actionable status
+(`active`, `tested`, `pending_review`, or `public`).
+
+Response `200`:
+```json
+[
+  {
+    "id": 7,
+    "name": "github-otp",
+    "version": "202603-01",
+    "status": "active",
+    "prompt_assigned": false,
+    "provider_tags": ["github"]
+  }
+]
+```
+
+`prompt_assigned` is `true` once the Chrome extension has stored a local prompt
+for this configuration and called `POST /api/configs/<id>/prompt-assigned`.
+
+---
+
+#### `POST /api/configs/<id>/prompt-assigned`
+Set `configurations.prompt_assigned = 1` for a configuration owned by the caller.
+Called by the Chrome extension after it stores a fill prompt locally.
+
+Response: `204 No Content`, or `404` if not found / not owned by caller.
+
+---
+
 ### Admin UI routes (`/noncey/`)
 
 | Route | Description |
