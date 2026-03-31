@@ -23,8 +23,8 @@ reference for migrations, server rebuilds, and future contributors.
  │  ┌────┴───────────────────────────────┐        │           │
  │  │  Apache2                           │        │           │
  │  │  :443  nonces.yourdomain.com       │  ┌─────▼──────┐   │
- │  │    /api/    ──proxy──▶ Flask :5000 │  │  app.py    │   │
- │  │    /noncey/ ──proxy──▶ Flask :5000 │  │  (Flask)   │   │
+ │  │    /api/  ──proxy──▶ Flask :5000   │  │  app.py    │   │
+ │  │    /auth/   ──proxy──▶ Flask :5000 │  │  (Flask)   │   │
  │  └────────────────────────────────────┘  └─────┬──────┘   │
  │                                                │           │
  │                                                │           │
@@ -133,7 +133,7 @@ Extension
 ### 2c. User / configuration provisioning
 
 ```
-User (authenticated web UI at nonces.yourdomain.com/noncey/)
+User (authenticated web UI at nonces.yourdomain.com/auth/)
   │
   ├─ self-service: change password, download Gmail filter XML
   ├─ configuration CRUD: create → add providers + matchers → activate
@@ -169,7 +169,7 @@ Include in requests as: `Authorization: Bearer <token>`
 
 Flask signed cookie session (`session['user_id']`). Sessions are permanent with a 30-day
 lifetime (`app.permanent_session_lifetime`). Apache2 no longer handles authentication for
-the `/noncey/` path — Flask does it entirely.
+the `/auth/` path — Flask does it entirely.
 
 ### REST Endpoints
 
@@ -247,39 +247,39 @@ Response: `204 No Content`, or `404` if not found / not owned by caller.
 
 ---
 
-### Admin UI routes (`/noncey/`)
+### Admin UI routes (`/auth/`)
 
 | Route | Description |
 |---|---|
-| `GET/POST /noncey/login` | Login form |
-| `POST /noncey/logout` | Clear session |
-| `GET /noncey/` | Dashboard: owned + subscribed configs with update badges |
-| `GET/POST /noncey/configs/new` | Create configuration |
-| `GET/POST /noncey/configs/<id>/edit` | Edit configuration metadata |
-| `GET /noncey/configs/<id>` | Configuration detail (providers, lifecycle controls) |
-| `POST /noncey/configs/<id>/activate` | Toggle draft ↔ active |
-| `POST /noncey/configs/<id>/submit` | Submit tested config for marketplace review |
-| `GET/POST /noncey/configs/<id>/delete` | Delete configuration |
-| `GET/POST /noncey/configs/<id>/providers/new` | Add provider to config |
-| `GET/POST /noncey/configs/<id>/providers/<pid>/edit` | Edit provider |
-| `GET/POST /noncey/configs/<id>/providers/<pid>/delete` | Delete provider |
-| `POST /noncey/configs/<id>/providers/<pid>/matchers/new` | Add matcher |
-| `POST /noncey/configs/<id>/providers/<pid>/matchers/<mid>/delete` | Remove matcher |
-| `GET /noncey/unmatched` | User's unmatched email inbox |
-| `GET/POST /noncey/unmatched/<id>` | Inspect + promote to provider (with config selector) |
-| `POST /noncey/unmatched/<id>/dismiss` | Dismiss unmatched email |
-| `GET /noncey/marketplace` | Browse public configurations |
-| `POST /noncey/marketplace/<id>/subscribe` | Subscribe (copy) a public config |
-| `POST /noncey/marketplace/<id>/update/<local_id>` | Update subscription to newer version |
-| `GET/POST /noncey/account/password` | Change own password |
-| `GET /noncey/account/gmail-filters.xml` | Download Gmail Atom filter XML |
-| `GET /noncey/admin/users` | *(admin)* User list |
-| `GET/POST /noncey/admin/users/new` | *(admin)* Create user |
-| `GET/POST /noncey/admin/users/<id>/edit` | *(admin)* Edit user |
-| `GET/POST /noncey/admin/users/<id>/delete` | *(admin)* Delete user |
-| `GET /noncey/admin/marketplace` | *(admin)* Review queue |
-| `POST /noncey/admin/marketplace/<id>/approve` | *(admin)* Approve → public |
-| `POST /noncey/admin/marketplace/<id>/reject` | *(admin)* Reject → back to tested |
+| `GET/POST /auth/login` | Login form |
+| `POST /auth/logout` | Clear session |
+| `GET /auth/` | Dashboard: owned + subscribed configs with update badges |
+| `GET/POST /auth/configs/new` | Create configuration |
+| `GET/POST /auth/configs/<id>/edit` | Edit configuration metadata |
+| `GET /auth/configs/<id>` | Configuration detail (providers, lifecycle controls) |
+| `POST /auth/configs/<id>/activate` | Toggle draft ↔ active |
+| `POST /auth/configs/<id>/submit` | Submit tested config for marketplace review |
+| `GET/POST /auth/configs/<id>/delete` | Delete configuration |
+| `GET/POST /auth/configs/<id>/providers/new` | Add provider to config |
+| `GET/POST /auth/configs/<id>/providers/<pid>/edit` | Edit provider |
+| `GET/POST /auth/configs/<id>/providers/<pid>/delete` | Delete provider |
+| `POST /auth/configs/<id>/providers/<pid>/matchers/new` | Add matcher |
+| `POST /auth/configs/<id>/providers/<pid>/matchers/<mid>/delete` | Remove matcher |
+| `GET /auth/unmatched` | User's unmatched email inbox |
+| `GET/POST /auth/unmatched/<id>` | Inspect + promote to provider (with config selector) |
+| `POST /auth/unmatched/<id>/dismiss` | Dismiss unmatched email |
+| `GET /auth/marketplace` | Browse public configurations |
+| `POST /auth/marketplace/<id>/subscribe` | Subscribe (copy) a public config |
+| `POST /auth/marketplace/<id>/update/<local_id>` | Update subscription to newer version |
+| `GET/POST /auth/account/password` | Change own password |
+| `GET /auth/account/gmail-filters.xml` | Download Gmail Atom filter XML |
+| `GET /auth/admin/users` | *(admin)* User list |
+| `GET/POST /auth/admin/users/new` | *(admin)* Create user |
+| `GET/POST /auth/admin/users/<id>/edit` | *(admin)* Edit user |
+| `GET/POST /auth/admin/users/<id>/delete` | *(admin)* Delete user |
+| `GET /auth/admin/marketplace` | *(admin)* Review queue |
+| `POST /auth/admin/marketplace/<id>/approve` | *(admin)* Approve → public |
+| `POST /auth/admin/marketplace/<id>/reject` | *(admin)* Reject → back to tested |
 
 ---
 
@@ -593,7 +593,7 @@ Files outside `/opt/noncey/` are symlinks or idempotent edits:
 
 ### Apache2 VirtualHost
 
-Both the REST API (`/api/`) and the user/admin UI (`/noncey/`) are served from
+Both the REST API (`/api/`) and the user/admin UI (`/auth/`) are served from
 the same VirtualHost (`nonces.yourdomain.com`). The generated `noncey-nonces.conf`
 contains both ProxyPass directives and is symlinked into `sites-available/` by
 `install.sh`. No separate admin VirtualHost or manually-included snippet is needed.

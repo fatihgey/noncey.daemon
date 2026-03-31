@@ -1,6 +1,6 @@
 """
 noncey — user-facing Blueprint (admin + regular users).
-Served under /noncey/ via Apache2 reverse proxy.
+Served under /auth/ via Apache2 reverse proxy.
 Flask handles authentication; Apache needs no auth directives.
 """
 
@@ -21,7 +21,7 @@ from provision import ProvisionError, validate_username
 
 admin_bp = Blueprint(
     'admin', __name__,
-    url_prefix='/noncey',
+    url_prefix='/auth',
     template_folder='templates',
 )
 

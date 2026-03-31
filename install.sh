@@ -387,10 +387,11 @@ cat > "${ETC_DIR}/noncey-nonces.conf" <<EOF
     ProxyPass        /api/    http://127.0.0.1:${FLASK_PORT}/api/
     ProxyPassReverse /api/    http://127.0.0.1:${FLASK_PORT}/api/
 
-    # User / admin UI
-    RedirectMatch permanent ^/noncey$ /noncey/
-    ProxyPass        /noncey/ http://127.0.0.1:${FLASK_PORT}/noncey/
-    ProxyPassReverse /noncey/ http://127.0.0.1:${FLASK_PORT}/noncey/
+    # User / admin UI — / redirects to /auth/ (remove when root has content)
+    RedirectMatch permanent ^/$ /auth/
+    RedirectMatch permanent ^/auth$ /auth/
+    ProxyPass        /auth/ http://127.0.0.1:${FLASK_PORT}/auth/
+    ProxyPassReverse /auth/ http://127.0.0.1:${FLASK_PORT}/auth/
 
     ErrorLog  \${APACHE_LOG_DIR}/noncey-error.log
     CustomLog \${APACHE_LOG_DIR}/noncey-access.log combined

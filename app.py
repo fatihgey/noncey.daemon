@@ -11,7 +11,7 @@ REST endpoints (all under /api/):
   GET    /api/configs
   POST   /api/configs/<id>/prompt-assigned
 
-Admin UI (all under /noncey/, proxied via admin VirtualHost):
+Admin UI (all under /auth/, proxied via nonces VirtualHost):
   see admin.py
 
 Flask CLI:
