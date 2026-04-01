@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+# noncey — database maintenance utility
+#
+# Usage: ./dbmaintenance <command>
+#
+# Reads DB path from noncey.conf (override with NONCEY_CONF env var).
+# Default config: /opt/noncey/daemon/etc/noncey.conf
+#
+set -euo pipefail
+
+CONF="${NONCEY_CONF:-/opt/noncey/daemon/etc/noncey.conf}"
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+usage() {
+    cat <<EOF
+Usage: $0 <command>
+
+Commands:
+  clearconfigurations   Delete all configurations, their channels (providers),
+                        headers (matchers), subscriptions, and nonces.
+                        Unmatched emails and user accounts are kept.
+EOF
+    exit 1
+}
+
+get_db_path() {
+    python3 - "$CONF" <<'PY'
+import sys, configparser
+c = configparser.ConfigParser()
+c.read(sys.argv[1])
+print(c.get('paths', 'db_path', fallback='/opt/noncey/daemon/var/noncey.db'))
+PY
+}
+
+confirm() {
+    read -rp "$1 [yes/N]: " ans
+    [[ "${ans,,}" == "yes" ]]
+}
+
+# ── Commands ──────────────────────────────────────────────────────────────────
+
+cmd_clearconfigurations() {
+    local db
+    db="$(get_db_path)"
+    [[ -f "$db" ]] || { echo "Database not found: $db" >&2; exit 1; }
+
+    echo "This will permanently delete:"
+    echo "  • All configurations (private and public)"
+    echo "  • All channels (providers) and headers (matchers)"
+    echo "  • All subscriptions"
+    echo "  • All nonces"
+    echo ""
+    echo "Users, unmatched emails, and sessions are kept."
+    echo ""
+    confirm "Proceed?" || { echo "Aborted."; exit 0; }
+
+    sqlite3 "$db" <<'SQL'
+PRAGMA foreign_keys = ON;
+DELETE FROM nonces;
+DELETE FROM subscriptions;
+DELETE FROM provider_matchers
+    WHERE provider_id IN (SELECT id FROM providers WHERE config_id IS NOT NULL);
+DELETE FROM providers WHERE config_id IS NOT NULL;
+DELETE FROM configurations;
+SQL
+
+    echo "Done. All configurations cleared."
+}
+
+# ── Dispatch ──────────────────────────────────────────────────────────────────
+
+case "${1:-}" in
+    clearconfigurations)  cmd_clearconfigurations ;;
+    *)                    usage ;;
+esac

@@ -1,68 +1,103 @@
 {% extends 'admin/_base.html' %}
-{% block title %}noncey — {{ config.name }} v{{ config.version }}{% endblock %}
+{% block title %}noncey — {{ config.name }}{% endblock %}
 {% block content %}
 
+{# ── Header ── #}
 <div style="display:flex;align-items:baseline;gap:1rem;flex-wrap:wrap;margin-bottom:.5rem;">
-  <h1 style="margin:0;">{{ config.name }} <small style="font-weight:400;color:#666;">v{{ config.version }}</small></h1>
+  <h1 style="margin:0;">{{ config.name }}
+    {% if config.visibility == 'public' %}
+      <small style="font-weight:400;color:#666;">{{ config.version }}</small>
+    {% endif %}
+  </h1>
   <span class="badge badge-{{ config.status }}">{{ config.status.replace('_', ' ') }}</span>
+  {% if config.visibility == 'public' %}
+    <span class="badge" style="background:#0c5460;color:#fff;">public</span>
+  {% endif %}
 </div>
-
-{% if source_config %}
-<p style="color:#666;font-size:.875rem;margin-bottom:1rem;">
-  Subscribed from <strong>{{ source_config.owner }}</strong> /
-  {{ source_config.name }} v{{ source_config.version }}
-</p>
-{% endif %}
 
 {% if config.description %}
 <p style="color:#444;margin-bottom:1rem;">{{ config.description }}</p>
 {% endif %}
 
 {# ── Lifecycle controls ── #}
+{% if config.visibility == 'private' %}
 <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:1.5rem;">
-  <a class="btn" href="{{ url_for('admin.config_edit', config_id=config.id) }}">Edit</a>
+  {% if config.status != 'pending_review' %}
+    <a class="btn" href="{{ url_for('admin.config_edit', config_id=config.id) }}">Edit</a>
+  {% endif %}
 
-  {% if config.status == 'draft' %}
+  {% if config.status in ('valid', 'valid_tested') %}
     <form class="inline" method="post"
           action="{{ url_for('admin.config_activate', config_id=config.id) }}">
-      <button class="btn btn-success" type="submit"
-              {% if not activatable %}disabled title="Add a provider with a matcher first"{% endif %}>
-        Activate
-      </button>
+      {% if config.activated %}
+        <button class="btn" type="submit">Deactivate</button>
+      {% else %}
+        <button class="btn btn-success" type="submit">Activate</button>
+      {% endif %}
     </form>
-  {% elif config.status == 'active' %}
-    <form class="inline" method="post"
-          action="{{ url_for('admin.config_activate', config_id=config.id) }}">
-      <button class="btn" type="submit">Deactivate</button>
-    </form>
-    <span style="color:#888;font-size:.85rem;padding:.4rem 0;">
-      Testing: {{ config.test_count }}/{{ config.test_threshold }} extractions
-    </span>
-  {% elif config.status == 'tested' %}
+  {% elif config.status == 'incomplete' %}
+    <button class="btn btn-success" disabled
+            title="Add at least one channel with a header and a prompt first">Activate</button>
+  {% endif %}
+
+  {% if config.status == 'valid_tested' %}
     <form class="inline" method="post"
           action="{{ url_for('admin.config_submit', config_id=config.id) }}">
       <button class="btn btn-primary" type="submit">Submit for marketplace review</button>
     </form>
   {% elif config.status == 'pending_review' %}
     <span style="color:#856404;font-size:.875rem;padding:.4rem 0;">Awaiting admin review</span>
-  {% elif config.status == 'public' %}
-    <span style="color:#0c5460;font-size:.875rem;padding:.4rem 0;">Published in marketplace</span>
   {% endif %}
 
   <a class="btn btn-danger" href="{{ url_for('admin.config_delete', config_id=config.id) }}">Delete</a>
 </div>
 
-{% if config.status == 'tested' and not config.description %}
+{% if config.status == 'valid_tested' and not config.description %}
 <div class="flash error">A description is required before submitting for marketplace review. <a href="{{ url_for('admin.config_edit', config_id=config.id) }}">Add one now.</a></div>
+{% endif %}
+
+{% else %}{# public config — read-only #}
+<div style="margin-bottom:1.5rem;">
+  <span style="color:#0c5460;font-size:.875rem;">
+    Published in marketplace — read-only.
+    {% if config.owner_id == current_user.id %}<a href="{{ url_for('admin.admin_marketplace') }}">Admin view</a>{% endif %}
+  </span>
+</div>
+{% endif %}
+
+{# ── Prompt ── #}
+<hr>
+<h2>Prompt</h2>
+{% if config.prompt %}
+  {% set p = config.prompt | fromjson %}
+  <table style="max-width:700px;">
+    <tr>
+      <th style="width:8rem;">URL</th>
+      <td style="font-family:monospace;font-size:.85rem;word-break:break-all;">
+        <span class="badge" style="margin-right:.4rem;background:#6c757d;color:#fff;">
+          {{ p.url_match if p.url_match else 'exact' }}
+        </span>{{ p.url }}
+      </td>
+    </tr>
+    <tr>
+      <th>OTP field</th>
+      <td><code>{{ p.selector }}</code></td>
+    </tr>
+  </table>
+{% else %}
+  <p class="hint" style="color:#856404;">
+    No prompt set. Open the noncey extension options page, navigate to the OTP login page,
+    and use the <strong>Pick</strong> button on this configuration.
+  </p>
 {% endif %}
 
 <hr>
 
-{# ── Providers ── #}
+{# ── Channels (providers) ── #}
 <div style="display:flex;align-items:center;gap:1rem;margin-bottom:.75rem;">
-  <h2 style="margin:0;">Providers</h2>
-  {% if config.status in ('draft', 'active') %}
-  <a class="btn" href="{{ url_for('admin.provider_new', config_id=config.id) }}">+ Add provider</a>
+  <h2 style="margin:0;">Channels</h2>
+  {% if config.visibility == 'private' and config.status in ('incomplete', 'valid') %}
+  <a class="btn" href="{{ url_for('admin.provider_new', config_id=config.id) }}">+ Add channel</a>
   {% endif %}
 </div>
 
@@ -73,7 +108,7 @@
       <th>Tag</th>
       <th>Source</th>
       <th>Mode</th>
-      <th>Matchers</th>
+      <th>Headers</th>
       <th>Actions</th>
     </tr>
   </thead>
@@ -86,14 +121,14 @@
       <td>
         {% set m_list = matchers.get(p.id, []) %}
         {% if m_list %}
-          {{ m_list | length }} matcher{{ 's' if m_list | length != 1 }}
+          {{ m_list | length }} header{{ 's' if m_list | length != 1 }}
         {% else %}
           <span style="color:#c82333;">none</span>
         {% endif %}
       </td>
       <td class="actions">
         <a class="btn" href="{{ url_for('admin.provider_edit', config_id=config.id, provider_id=p.id) }}">Edit</a>
-        {% if config.status in ('draft', 'active') %}
+        {% if config.visibility == 'private' and config.status in ('incomplete', 'valid') %}
         <a class="btn btn-danger"
            href="{{ url_for('admin.provider_delete', config_id=config.id, provider_id=p.id) }}">Delete</a>
         {% endif %}
@@ -103,15 +138,19 @@
   </tbody>
 </table>
 {% else %}
-<p class="empty">No providers yet. <a href="{{ url_for('admin.provider_new', config_id=config.id) }}">Add one.</a></p>
+<p class="empty">
+  No channels yet.
+  {% if config.visibility == 'private' %}<a href="{{ url_for('admin.provider_new', config_id=config.id) }}">Add one.</a>{% endif %}
+</p>
 {% endif %}
 
-{% if not activatable and config.status == 'draft' %}
-<p class="hint" style="color:#c82333;">At least one provider with a matcher is required to activate this configuration.</p>
+{% if config.status == 'incomplete' and not activatable %}
+<p class="hint" style="color:#c82333;">
+  At least one channel with a header is required.
+</p>
 {% endif %}
 
 <hr>
-
 <div style="display:flex;gap:.5rem;">
   <a class="btn" href="{{ url_for('admin.dashboard') }}">← Dashboard</a>
 </div>

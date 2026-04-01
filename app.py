@@ -42,6 +42,9 @@ app.secret_key = cfg('general', 'secret_key')   # also used for Flask session / 
 app.permanent_session_lifetime = timedelta(days=30)
 app.register_blueprint(admin_bp)
 
+# Jinja2 helper: {{ some_json_text | fromjson }}
+app.jinja_env.filters['fromjson'] = json.loads
+
 # ── Database teardown ─────────────────────────────────────────────────────────
 
 SCHEMA_FILE = Path(__file__).parent / 'schema.sql'
@@ -298,9 +301,12 @@ def list_configs():
 @app.post('/api/configs/<int:config_id>/prompt')
 @require_auth
 def set_prompt(config_id: int):
-    data     = request.get_json(silent=True) or {}
-    url      = data.get('url', '').strip()
-    selector = data.get('selector', '').strip()
+    data      = request.get_json(silent=True) or {}
+    url       = data.get('url', '').strip()
+    selector  = data.get('selector', '').strip()
+    url_match = data.get('url_match', 'prefix')
+    if url_match not in ('exact', 'prefix', 'regex'):
+        url_match = 'prefix'
 
     if not url or not selector:
         return jsonify({'error': 'url and selector required'}), 400
@@ -309,7 +315,8 @@ def set_prompt(config_id: int):
     cur = db.execute(
         "UPDATE configurations SET prompt = ?, updated_at = datetime('now') "
         "WHERE  id = ? AND owner_id = ? AND visibility = 'private'",
-        (json.dumps({'url': url, 'selector': selector}), config_id, g.user_id)
+        (json.dumps({'url': url, 'url_match': url_match, 'selector': selector}),
+         config_id, g.user_id)
     )
     if cur.rowcount == 0:
         return jsonify({'error': 'Not found'}), 404
