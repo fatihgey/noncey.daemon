@@ -331,6 +331,13 @@ Both `ingest.py` and `app.py` read this file at startup. Override path with `NON
 
 ## 5. Database Schema (SQLite)
 
+> **Conceptual model:** For the full Provider Configuration lifecycle — terminology,
+> status/visibility state machine, versioning, creation wizard, subscription model,
+> and all related flows — see **[CONCEPT_CONFIGURATION.md](CONCEPT_CONFIGURATION.md)**.
+> The schema below reflects the *current* implementation; the concept document is the
+> authoritative design intent, and the two will diverge until the data model migration
+> is complete.
+
 ```
 users
   id            PK
@@ -500,7 +507,14 @@ not just provider tag.
 
 ---
 
-## 7. Planned Chrome Extension Changes
+## 7. Planned Changes
+
+> The conceptual target state for configurations is defined in
+> **[CONCEPT_CONFIGURATION.md](CONCEPT_CONFIGURATION.md)**.
+> The items below are the concrete implementation tasks that close the gap between
+> the current code and that target.
+
+### Planned Chrome Extension Changes
 
 The following changes to `noncey.client.chromeextension` are planned but **not yet
 implemented**. They are noted here to preserve design intent across context boundaries.
