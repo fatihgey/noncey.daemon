@@ -17,9 +17,14 @@ usage() {
 Usage: $0 <command>
 
 Commands:
-  clearconfigurations   Delete all configurations, their channels (providers),
+  clearconfigurations   Delete all configurations, channels (providers),
                         headers (matchers), subscriptions, and nonces.
-                        Unmatched emails and user accounts are kept.
+                        This includes orphaned providers (config_id IS NULL).
+                        Users and unmatched emails are kept.
+
+  showstate             Print a summary of current DB state: users, configs,
+                        providers (including orphans), matchers, subscriptions,
+                        nonces, and unmatched emails.
 EOF
     exit 1
 }
@@ -38,39 +43,95 @@ confirm() {
     [[ "${ans,,}" == "yes" ]]
 }
 
+q() {  # q <label> <sql>
+    echo ""
+    echo "── $1"
+    sqlite3 -column -header "$DB" "$2"
+}
+
 # ── Commands ──────────────────────────────────────────────────────────────────
 
 cmd_clearconfigurations() {
-    local db
-    db="$(get_db_path)"
-    [[ -f "$db" ]] || { echo "Database not found: $db" >&2; exit 1; }
+    DB="$(get_db_path)"
+    [[ -f "$DB" ]] || { echo "Database not found: $DB" >&2; exit 1; }
 
     echo "This will permanently delete:"
     echo "  • All configurations (private and public)"
-    echo "  • All channels (providers) and headers (matchers)"
+    echo "  • All channels (providers), including orphaned ones (config_id IS NULL)"
+    echo "  • All headers (matchers)"
     echo "  • All subscriptions"
     echo "  • All nonces"
     echo ""
-    echo "Users, unmatched emails, and sessions are kept."
+    echo "Users, sessions, and unmatched emails are kept."
     echo ""
     confirm "Proceed?" || { echo "Aborted."; exit 0; }
 
-    sqlite3 "$db" <<'SQL'
-PRAGMA foreign_keys = ON;
+    sqlite3 "$DB" <<'SQL'
+PRAGMA foreign_keys = OFF;
 DELETE FROM nonces;
 DELETE FROM subscriptions;
-DELETE FROM provider_matchers
-    WHERE provider_id IN (SELECT id FROM providers WHERE config_id IS NOT NULL);
-DELETE FROM providers WHERE config_id IS NOT NULL;
+DELETE FROM provider_matchers;
+DELETE FROM providers;
 DELETE FROM configurations;
+PRAGMA foreign_keys = ON;
 SQL
 
-    echo "Done. All configurations cleared."
+    echo "Done. All configurations and channels cleared."
+}
+
+cmd_showstate() {
+    DB="$(get_db_path)"
+    [[ -f "$DB" ]] || { echo "Database not found: $DB" >&2; exit 1; }
+
+    q "Users" \
+      "SELECT id, username, is_admin, created_at FROM users ORDER BY id;"
+
+    q "Configurations" \
+      "SELECT c.id, u.username AS owner, c.name, c.version, c.status,
+              c.visibility, c.activated,
+              CASE WHEN c.prompt IS NOT NULL THEN 'yes' ELSE 'no' END AS has_prompt,
+              c.updated_at
+       FROM configurations c JOIN users u ON u.id=c.owner_id
+       ORDER BY c.id;"
+
+    q "Providers (channels) — including orphans (config_id IS NULL)" \
+      "SELECT p.id, u.username AS owner, p.config_id,
+              p.tag, p.extract_mode,
+              p.nonce_start_marker
+       FROM providers p JOIN users u ON u.id=p.user_id
+       ORDER BY p.user_id, p.id;"
+
+    q "Matchers (headers)" \
+      "SELECT pm.id, pm.provider_id, p.tag,
+              pm.sender_email, pm.subject_pattern
+       FROM provider_matchers pm JOIN providers p ON p.id=pm.provider_id
+       ORDER BY pm.provider_id;"
+
+    q "Subscriptions" \
+      "SELECT s.id, u.username AS subscriber, c.name AS config, c.version
+       FROM subscriptions s
+       JOIN users u ON u.id=s.user_id
+       JOIN configurations c ON c.id=s.config_id
+       ORDER BY s.id;"
+
+    q "Nonces (most recent 10)" \
+      "SELECT n.id, u.username, p.tag, n.nonce_value,
+              n.received_at, n.expires_at
+       FROM nonces n
+       JOIN users u ON u.id=n.user_id
+       JOIN providers p ON p.id=n.provider_id
+       ORDER BY n.received_at DESC LIMIT 10;"
+
+    q "Unmatched emails (most recent 10)" \
+      "SELECT e.id, u.username, e.sender, e.subject, e.received_at
+       FROM unmatched_emails e JOIN users u ON u.id=e.user_id
+       ORDER BY e.received_at DESC LIMIT 10;"
 }
 
 # ── Dispatch ──────────────────────────────────────────────────────────────────
 
 case "${1:-}" in
     clearconfigurations)  cmd_clearconfigurations ;;
+    showstate)            cmd_showstate ;;
     *)                    usage ;;
 esac
