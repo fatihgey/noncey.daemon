@@ -76,7 +76,7 @@ def _secret() -> str:
 
 def make_token(user_id: int, session_id: int) -> str:
     payload = {
-        'sub': user_id,
+        'sub': str(user_id),
         'sid': session_id,
         'iat': datetime.now(timezone.utc),
     }
