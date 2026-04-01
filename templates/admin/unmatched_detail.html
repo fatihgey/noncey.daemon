@@ -21,7 +21,7 @@
 
 <hr>
 
-<h2>Create provider from this email</h2>
+<h2>Create channel from this email</h2>
 
 <form method="post" style="max-width:600px;">
   <input type="hidden" name="action" value="promote">
@@ -44,16 +44,14 @@
     </label>
     <div id="new-config-fields" style="display:none;margin-left:1.5rem;margin-top:.35rem;">
       <input type="text" name="new_config_name" placeholder="Configuration name"
-             autocomplete="off" style="margin-bottom:.4rem;"
+             autocomplete="off"
              onfocus="document.getElementById('config-new-radio').checked=true">
-      <input type="text" name="new_config_version" placeholder="Version (e.g. 202603-01)"
-             autocomplete="off">
     </div>
   </div>
   <hr>
 
   <div class="field">
-    <label for="tag">Provider tag</label>
+    <label for="tag">Channel name</label>
     <input type="text" id="tag" name="tag" required autocomplete="off" spellcheck="false"
            placeholder="e.g. github, bank-otp">
     <p class="hint">Short label used in the extension dropdown.</p>
@@ -180,14 +178,14 @@
     <p class="hint">Regex examples: <code>verify</code> · <code>code|otp</code> · <code>^\[GitHub\]</code></p>
   </div>
 
-  <input class="btn btn-primary" type="submit" value="Create provider">
+  <input class="btn btn-primary" type="submit" value="Create channel">
 </form>
 
 <hr>
 
 <form method="post" action="{{ url_for('admin.unmatched_dismiss', email_id=row.id) }}">
   <button class="btn btn-danger" type="submit"
-          onclick="return confirm('Dismiss this email without creating a provider?')">Dismiss</button>
+          onclick="return confirm('Dismiss this email without creating a channel?')">Dismiss</button>
   <a class="btn" href="{{ url_for('admin.unmatched_list') }}">← Back</a>
 </form>
 

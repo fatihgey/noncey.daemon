@@ -833,12 +833,12 @@ def unmatched_detail(email_id):
                 _auto_update_status(db, config_id)
                 db.commit()
             except sqlite3.IntegrityError:
-                flash(f"Provider tag '{tag}' already exists.", 'error')
+                flash(f"Channel name '{tag}' already exists.", 'error')
                 return render_template('admin/unmatched_detail.html',
                                        row=row, user_configs=user_configs,
                                        has_public=has_public)
 
-            flash(f"Provider '{tag}' created.", 'success')
+            flash(f"Channel '{tag}' created.", 'success')
             return redirect(url_for('admin.config_detail', config_id=config_id))
 
     return render_template('admin/unmatched_detail.html',
