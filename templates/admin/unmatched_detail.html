@@ -34,7 +34,7 @@
     <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;margin-bottom:.3rem;">
       <input type="radio" name="config_choice" value="{{ c.id }}"
              {{ 'checked' if loop.first }}>
-      {{ c.name }} <span style="color:#888;">v{{ c.version }}</span>
+      {{ c.name }}{% if c.version != '-1' %} <span style="color:#888;">{{ c.version }}</span>{% endif %}
     </label>
     {% endfor %}
     {% endif %}

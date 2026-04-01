@@ -710,11 +710,13 @@ def unmatched_detail(email_id):
         (user_id,)
     ).fetchone()[0] > 0
 
-    # User's private configurations for the target config selector
+    # User's private configurations for the target config selector.
+    # COALESCE handles the edge case where visibility is NULL (migration gap).
+    # Includes valid_tested — adding a channel is allowed and resets it to valid.
     user_configs = db.execute(
         "SELECT id, name, version FROM configurations "
-        "WHERE owner_id=? AND visibility='private' "
-        "AND status IN ('incomplete','valid') "
+        "WHERE owner_id=? AND COALESCE(visibility,'private') = 'private' "
+        "AND status NOT IN ('pending_review') "
         "ORDER BY name, version",
         (user_id,)
     ).fetchall()
