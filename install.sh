@@ -238,7 +238,95 @@ if 'users' in tables:
 db.commit()
 db.close()
 PY
-ok "Column migrations applied."
+ok "Column migrations applied (legacy)."
+
+# Second migration block: new configuration model (v2)
+# Adds visibility/prompt/activated/client_test_count; renames status values;
+# creates subscriptions table; migrates source_config_id relationships.
+sudo -u noncey "$VENV/bin/python3" - "$DB_PATH" <<'PY'
+import sys, sqlite3
+db = sqlite3.connect(sys.argv[1])
+db.execute("PRAGMA foreign_keys = OFF")
+
+tables = {r[0] for r in db.execute(
+    "SELECT name FROM sqlite_master WHERE type='table'"
+).fetchall()}
+
+if 'configurations' in tables:
+    cols = {r[1] for r in db.execute("PRAGMA table_info(configurations)").fetchall()}
+    for col, sql in [
+        ('visibility',         "ALTER TABLE configurations ADD COLUMN visibility TEXT NOT NULL DEFAULT 'private'"),
+        ('prompt',             "ALTER TABLE configurations ADD COLUMN prompt TEXT DEFAULT NULL"),
+        ('client_test_count',  "ALTER TABLE configurations ADD COLUMN client_test_count INTEGER NOT NULL DEFAULT 0"),
+        ('activated',          "ALTER TABLE configurations ADD COLUMN activated INTEGER NOT NULL DEFAULT 0"),
+    ]:
+        if col not in cols:
+            db.execute(sql)
+
+    # Rename status values and derive activated flag from old status
+    # Order matters: most specific first to avoid double-updating
+    db.execute(
+        "UPDATE configurations SET visibility='public', status='valid', activated=0 "
+        "WHERE status='public'"
+    )
+    db.execute(
+        "UPDATE configurations SET status='valid_tested', activated=1 "
+        "WHERE status='tested'"
+    )
+    db.execute(
+        "UPDATE configurations SET status='valid', activated=1 "
+        "WHERE status='active'"
+    )
+    db.execute(
+        "UPDATE configurations SET status='incomplete', activated=0 "
+        "WHERE status='draft'"
+    )
+    # pending_review: keep status, set activated=1 (were tested before submitting)
+    db.execute(
+        "UPDATE configurations SET activated=1 "
+        "WHERE status='pending_review'"
+    )
+
+if 'subscriptions' not in tables:
+    db.execute("""
+        CREATE TABLE subscriptions (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            config_id  INTEGER NOT NULL REFERENCES configurations(id) ON DELETE CASCADE,
+            created_at TEXT    NOT NULL DEFAULT (datetime('now')),
+            UNIQUE(user_id, config_id)
+        )
+    """)
+    db.execute("CREATE INDEX idx_subscriptions_user   ON subscriptions(user_id)")
+    db.execute("CREATE INDEX idx_subscriptions_config ON subscriptions(config_id)")
+
+    if 'configurations' in tables:
+        cols = {r[1] for r in db.execute("PRAGMA table_info(configurations)").fetchall()}
+        if 'source_config_id' in cols:
+            # Migrate cloned subscriptions: owner → source config
+            rows = db.execute(
+                "SELECT owner_id, source_config_id FROM configurations "
+                "WHERE source_config_id IS NOT NULL"
+            ).fetchall()
+            for row in rows:
+                try:
+                    db.execute(
+                        "INSERT OR IGNORE INTO subscriptions (user_id, config_id) VALUES (?, ?)",
+                        (row[0], row[1])
+                    )
+                except Exception:
+                    pass
+        # Auto-subscribe owners to their own public configs
+        db.execute("""
+            INSERT OR IGNORE INTO subscriptions (user_id, config_id)
+            SELECT owner_id, id FROM configurations WHERE visibility='public'
+        """)
+
+db.execute("PRAGMA foreign_keys = ON")
+db.commit()
+db.close()
+PY
+ok "Configuration model v2 migrations applied."
 
 (
     cd "$INSTALL_DIR"

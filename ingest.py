@@ -211,9 +211,10 @@ def find_matching_provider(conn, user_id: int, sender_addr: str, subject: str):
     Return the first providers row whose matchers match sender + subject,
     or None if no match.
 
-    A provider is considered active if:
+    A provider is considered active if any of:
     - it has no config_id (unassigned / always active), OR
-    - its configuration's status is 'active', 'tested', or 'public'.
+    - its config is private, activated, and valid/valid_tested (owned by this user), OR
+    - its config is public and this user has a subscription to it.
     """
     providers = conn.execute(
         "SELECT p.id, p.config_id, p.extract_source, p.extract_mode, "
@@ -221,8 +222,13 @@ def find_matching_provider(conn, user_id: int, sender_addr: str, subject: str):
         "FROM providers p "
         "LEFT JOIN configurations c ON c.id = p.config_id "
         "WHERE p.user_id = ? "
-        "  AND (p.config_id IS NULL OR c.status IN ('active', 'tested', 'public'))",
-        (user_id,)
+        "  AND (p.config_id IS NULL "
+        "       OR (c.visibility = 'private' AND c.activated = 1 "
+        "           AND c.status IN ('valid', 'valid_tested')) "
+        "       OR (c.visibility = 'public' AND c.status = 'valid' "
+        "           AND EXISTS (SELECT 1 FROM subscriptions s "
+        "                       WHERE s.user_id = ? AND s.config_id = c.id)))",
+        (user_id, user_id)
     ).fetchall()
 
     for prov in providers:
@@ -338,22 +344,6 @@ def main():
                 (user_id, provider['id'], nonce,
                  now.isoformat(), expires_at.isoformat())
             )
-            # Increment test_count on the owning configuration and advance to
-            # 'tested' automatically once the threshold is reached.
-            if provider['config_id']:
-                conn.execute(
-                    "UPDATE configurations "
-                    "SET test_count = test_count + 1, updated_at = ? "
-                    "WHERE id = ? AND status = 'active'",
-                    (now.isoformat(), provider['config_id'])
-                )
-                conn.execute(
-                    "UPDATE configurations "
-                    "SET status = 'tested', updated_at = ? "
-                    "WHERE id = ? AND status = 'active' "
-                    "  AND test_count >= test_threshold",
-                    (now.isoformat(), provider['config_id'])
-                )
 
         archive_email(archive_root, username, raw_bytes)
 

@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find /c/Claude/noncey.daemon -name *.conf -o -name *.cf)"
+    ]
+  }
+}

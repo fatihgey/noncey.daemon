@@ -90,9 +90,15 @@ After every change: commit and push to GitHub.
 
 ---
 
-## Planned work (Chrome extension side — see ARCHITECTURE.md §7)
+## Configuration model (v2 — implemented)
 
-The following daemon changes are pending to support upcoming extension features:
+See `CONCEPT_CONFIGURATION.md` for the authoritative conceptual reference.
 
-- `POST /api/configs/<id>/prompt-assigned` — set `configurations.prompt_assigned = 1`
-- `GET /api/configs` — list authenticated user's active configurations (optional)
+Key REST endpoints added/changed:
+- `GET /api/configs` — own private valid configs + subscribed public configs; includes `prompt`, `activated`, `visibility`, `is_owned`
+- `POST /api/configs/<id>/prompt` — set `{url, selector}` prompt from extension picker
+- `POST /api/configs/<id>/client-test` — increment client-side test count; auto-advances to `valid_tested` at 3
+- Removed: `POST /api/configs/<id>/prompt-assigned`
+
+Status values: `incomplete | valid | valid_tested | pending_review`
+Visibility: `private | public` (separate column, not a status value)

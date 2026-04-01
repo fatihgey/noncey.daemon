@@ -122,16 +122,41 @@ def _providers_with_matchers(db, config_id: int) -> tuple:
 
 
 def _config_activatable(providers, matchers) -> bool:
-    """A configuration can be activated if it has at least one provider with a matcher."""
+    """A configuration can be activated if it has at least one channel with a header."""
     return any(matchers.get(p['id']) for p in providers)
 
 
-def _update_config_status_check(db, config_id: int):
-    """After test_count changes, advance to 'tested' if threshold reached."""
+def _auto_update_status(db, config_id: int):
+    """
+    Recompute status after a structural change (channel/header/prompt added or removed).
+    Does NOT commit — caller is responsible.
+
+    Transitions:
+      incomplete  ↔  valid          (based on whether all elements are present)
+      valid_tested →  valid          (reset when structure changes)
+      pending_review: untouched      (locked during review)
+    """
+    config = db.execute(
+        "SELECT status, prompt FROM configurations WHERE id=?", (config_id,)
+    ).fetchone()
+    if not config or config['status'] == 'pending_review':
+        return
+
+    providers = db.execute(
+        "SELECT id FROM providers WHERE config_id=?", (config_id,)
+    ).fetchall()
+    has_channel_with_header = any(
+        db.execute(
+            "SELECT id FROM provider_matchers WHERE provider_id=?", (p['id'],)
+        ).fetchone()
+        for p in providers
+    )
+    has_prompt = config['prompt'] is not None
+
+    new_status = 'valid' if (has_channel_with_header and has_prompt) else 'incomplete'
     db.execute(
-        "UPDATE configurations SET status='tested', updated_at=datetime('now') "
-        "WHERE id=? AND status='active' AND test_count >= test_threshold",
-        (config_id,)
+        "UPDATE configurations SET status=?, updated_at=datetime('now') WHERE id=?",
+        (new_status, config_id)
     )
 
 
@@ -182,40 +207,46 @@ def dashboard():
     user_id = session['user_id']
     db      = get_db()
 
-    # Count unmatched emails
     unmatched_count = db.execute(
         "SELECT COUNT(*) FROM unmatched_emails WHERE user_id=?", (user_id,)
     ).fetchone()[0]
 
-    # Owned + subscribed configurations with stats
-    configs = db.execute(
+    # Own private configurations
+    own_configs = db.execute(
         "SELECT c.*, "
         "  (SELECT COUNT(*) FROM providers p WHERE p.config_id=c.id) AS provider_count "
         "FROM configurations c "
-        "WHERE c.owner_id=? "
-        "ORDER BY c.source_config_id IS NULL DESC, c.updated_at DESC",
+        "WHERE c.owner_id=? AND c.visibility='private' "
+        "ORDER BY c.updated_at DESC",
         (user_id,)
     ).fetchall()
 
-    # Check update availability for subscribed configs
+    # Subscribed public configurations
+    sub_configs = db.execute(
+        "SELECT c.*, "
+        "  (SELECT COUNT(*) FROM providers p WHERE p.config_id=c.id) AS provider_count "
+        "FROM configurations c "
+        "JOIN subscriptions s ON s.config_id=c.id "
+        "WHERE s.user_id=? AND c.visibility='public' "
+        "ORDER BY c.name, c.version",
+        (user_id,)
+    ).fetchall()
+
+    # Check update availability: is there a newer public version of the same name?
     update_available = {}
-    for c in configs:
-        if c['source_config_id']:
-            src = db.execute(
-                "SELECT owner_id, name, version FROM configurations WHERE id=?",
-                (c['source_config_id'],)
-            ).fetchone()
-            if src:
-                newer = db.execute(
-                    "SELECT id FROM configurations "
-                    "WHERE owner_id=? AND name=? AND status='public' AND version>?",
-                    (src['owner_id'], src['name'], src['version'])
-                ).fetchone()
-                if newer:
-                    update_available[c['id']] = newer['id']
+    for c in sub_configs:
+        newer = db.execute(
+            "SELECT id FROM configurations "
+            "WHERE visibility='public' AND name=? AND version>? AND id!=? "
+            "ORDER BY version DESC LIMIT 1",
+            (c['name'], c['version'], c['id'])
+        ).fetchone()
+        if newer:
+            update_available[c['id']] = newer['id']
 
     return render_template('admin/dashboard.html',
-                           configs=configs,
+                           own_configs=own_configs,
+                           sub_configs=sub_configs,
                            unmatched_count=unmatched_count,
                            update_available=update_available)
 
@@ -226,39 +257,32 @@ def dashboard():
 @login_required
 def config_new():
     user_id = session['user_id']
-    default_version = datetime.now(timezone.utc).strftime('%Y%m-01')
 
     if request.method == 'POST':
         name        = request.form.get('name', '').strip()
-        version     = request.form.get('version', default_version).strip()
         description = request.form.get('description', '').strip() or None
-        try:
-            threshold = int(request.form.get('test_threshold', '3'))
-        except ValueError:
-            threshold = 3
 
-        if not name or not version:
-            flash('Name and version are required.', 'error')
-            return render_template('admin/config_form.html',
-                                   config=None, default_version=default_version)
+        if not name:
+            flash('Name is required.', 'error')
+            return render_template('admin/config_form.html', config=None)
+
         db = get_db()
         try:
             db.execute(
-                "INSERT INTO configurations (owner_id, name, version, description, test_threshold) "
-                "VALUES (?, ?, ?, ?, ?)",
-                (user_id, name, version, description, threshold)
+                "INSERT INTO configurations (owner_id, name, version, description) "
+                "VALUES (?, ?, '-1', ?)",
+                (user_id, name, description)
             )
             db.commit()
         except sqlite3.IntegrityError:
-            flash(f"A configuration named '{name}' v{version} already exists.", 'error')
-            return render_template('admin/config_form.html',
-                                   config=None, default_version=default_version)
+            flash(f"A configuration named '{name}' already exists.", 'error')
+            return render_template('admin/config_form.html', config=None)
+
         flash(f"Configuration '{name}' created.", 'success')
         config_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
         return redirect(url_for('admin.config_detail', config_id=config_id))
 
-    return render_template('admin/config_form.html',
-                           config=None, default_version=default_version)
+    return render_template('admin/config_form.html', config=None)
 
 
 @admin_bp.route('/configs/<int:config_id>/edit', methods=['GET', 'POST'])
@@ -270,36 +294,34 @@ def config_edit(config_id):
         flash('Configuration not found.', 'error')
         return redirect(url_for('admin.dashboard'))
 
+    if config['visibility'] == 'public':
+        flash('Public configurations are read-only.', 'error')
+        return redirect(url_for('admin.config_detail', config_id=config_id))
+
     if request.method == 'POST':
         name        = request.form.get('name', '').strip()
-        version     = request.form.get('version', '').strip()
         description = request.form.get('description', '').strip() or None
-        try:
-            threshold = int(request.form.get('test_threshold', '3'))
-        except ValueError:
-            threshold = 3
 
-        if not name or not version:
-            flash('Name and version are required.', 'error')
-            return render_template('admin/config_form.html',
-                                   config=config, default_version=config['version'])
+        if not name:
+            flash('Name is required.', 'error')
+            return render_template('admin/config_form.html', config=config)
+
         db = get_db()
         try:
             db.execute(
-                "UPDATE configurations SET name=?, version=?, description=?, "
-                "test_threshold=?, updated_at=datetime('now') WHERE id=?",
-                (name, version, description, threshold, config_id)
+                "UPDATE configurations SET name=?, description=?, "
+                "updated_at=datetime('now') WHERE id=?",
+                (name, description, config_id)
             )
             db.commit()
         except sqlite3.IntegrityError:
-            flash(f"A configuration named '{name}' v{version} already exists.", 'error')
-            return render_template('admin/config_form.html',
-                                   config=config, default_version=config['version'])
+            flash(f"A configuration named '{name}' already exists.", 'error')
+            return render_template('admin/config_form.html', config=config)
+
         flash('Configuration updated.', 'success')
         return redirect(url_for('admin.config_detail', config_id=config_id))
 
-    return render_template('admin/config_form.html',
-                           config=config, default_version=config['version'])
+    return render_template('admin/config_form.html', config=config)
 
 
 @admin_bp.route('/configs/<int:config_id>/delete', methods=['GET', 'POST'])
@@ -310,6 +332,10 @@ def config_delete(config_id):
     if not config:
         flash('Configuration not found.', 'error')
         return redirect(url_for('admin.dashboard'))
+
+    if config['visibility'] == 'public':
+        flash('Public configurations can only be deleted by an administrator.', 'error')
+        return redirect(url_for('admin.config_detail', config_id=config_id))
 
     if request.method == 'POST':
         db = get_db()
@@ -330,28 +356,28 @@ def config_activate(config_id):
         flash('Configuration not found.', 'error')
         return redirect(url_for('admin.dashboard'))
 
-    db = get_db()
-    providers, matchers = _providers_with_matchers(db, config_id)
+    if config['visibility'] == 'public':
+        flash('Public configurations are managed via subscriptions.', 'error')
+        return redirect(url_for('admin.config_detail', config_id=config_id))
 
-    if config['status'] == 'active':
+    db = get_db()
+
+    if config['activated']:
         db.execute(
-            "UPDATE configurations SET status='draft', updated_at=datetime('now') WHERE id=?",
+            "UPDATE configurations SET activated=0, updated_at=datetime('now') WHERE id=?",
             (config_id,)
         )
         db.commit()
         flash('Configuration deactivated.', 'success')
-    elif config['status'] in ('draft',):
-        if not _config_activatable(providers, matchers):
-            flash('Add at least one provider with a matcher before activating.', 'error')
-        else:
-            db.execute(
-                "UPDATE configurations SET status='active', updated_at=datetime('now') WHERE id=?",
-                (config_id,)
-            )
-            db.commit()
-            flash('Configuration activated.', 'success')
+    elif config['status'] in ('valid', 'valid_tested'):
+        db.execute(
+            "UPDATE configurations SET activated=1, updated_at=datetime('now') WHERE id=?",
+            (config_id,)
+        )
+        db.commit()
+        flash('Configuration activated.', 'success')
     else:
-        flash(f"Cannot activate from status '{config['status']}'.", 'error')
+        flash('Configuration must be valid before activating.', 'error')
 
     return redirect(url_for('admin.config_detail', config_id=config_id))
 
@@ -365,7 +391,7 @@ def config_submit(config_id):
         flash('Configuration not found.', 'error')
         return redirect(url_for('admin.dashboard'))
 
-    if config['status'] != 'tested':
+    if config['status'] != 'valid_tested':
         flash('Only tested configurations can be submitted for review.', 'error')
         return redirect(url_for('admin.config_detail', config_id=config_id))
     if not config['description']:
@@ -395,19 +421,9 @@ def config_detail(config_id):
     providers, matchers = _providers_with_matchers(db, config_id)
     activatable = _config_activatable(providers, matchers)
 
-    # Source config info (for subscriptions)
-    source_config = None
-    if config['source_config_id']:
-        source_config = db.execute(
-            "SELECT c.name, c.version, u.username AS owner "
-            "FROM configurations c JOIN users u ON u.id = c.owner_id "
-            "WHERE c.id=?",
-            (config['source_config_id'],)
-        ).fetchone()
-
     # Check if user has public configs (hides unmatched body for privacy)
     has_public = db.execute(
-        "SELECT COUNT(*) FROM configurations WHERE owner_id=? AND status='public'",
+        "SELECT COUNT(*) FROM configurations WHERE owner_id=? AND visibility='public'",
         (user_id,)
     ).fetchone()[0] > 0
 
@@ -416,7 +432,7 @@ def config_detail(config_id):
                            providers=providers,
                            matchers=matchers,
                            activatable=activatable,
-                           source_config=source_config,
+                           source_config=None,
                            has_public=has_public)
 
 
@@ -492,6 +508,8 @@ def provider_new(config_id):
             flash(f"Provider tag '{fields['tag']}' already exists.", 'error')
             return _render_provider_form(config, None, [], None)
 
+        _auto_update_status(db, config_id)
+        db.commit()
         flash(f"Provider '{fields['tag']}' created.", 'success')
         return redirect(url_for('admin.config_detail', config_id=config_id))
 
@@ -541,6 +559,8 @@ def provider_edit(config_id, provider_id):
             flash(f"Provider tag '{fields['tag']}' already exists.", 'error')
             return _render_provider_form(config, provider, matchers, sample_sender)
 
+        _auto_update_status(db, config_id)
+        db.commit()
         flash(f"Provider '{fields['tag']}' updated.", 'success')
         return redirect(url_for('admin.config_detail', config_id=config_id))
 
@@ -561,6 +581,22 @@ def provider_delete(config_id, provider_id):
     if request.method == 'POST':
         db = get_db()
         db.execute("DELETE FROM providers WHERE id=?", (provider_id,))
+        _auto_update_status(db, config_id)
+
+        # Auto-delete the configuration if it now has no channels and no prompt.
+        remaining = db.execute(
+            "SELECT COUNT(*) FROM providers WHERE config_id=?", (config_id,)
+        ).fetchone()[0]
+        cfg_row = db.execute(
+            "SELECT prompt FROM configurations WHERE id=?", (config_id,)
+        ).fetchone()
+        if remaining == 0 and cfg_row and cfg_row['prompt'] is None:
+            db.execute("DELETE FROM configurations WHERE id=?", (config_id,))
+            db.commit()
+            flash(f"Provider '{provider['tag']}' deleted. "
+                  "Configuration had no remaining elements and was removed.", 'success')
+            return redirect(url_for('admin.dashboard'))
+
         db.commit()
         flash(f"Provider '{provider['tag']}' deleted.", 'success')
         return redirect(url_for('admin.config_detail', config_id=config_id))
@@ -615,6 +651,7 @@ def matcher_new(config_id, provider_id):
         "VALUES (?, ?, ?)",
         (provider_id, sender, subject)
     )
+    _auto_update_status(db, config_id)
     db.commit()
     flash('Matcher added.', 'success')
     return redirect(url_for('admin.provider_edit',
@@ -630,6 +667,8 @@ def matcher_delete(config_id, provider_id, matcher_id):
         "DELETE FROM provider_matchers WHERE id=? AND provider_id=?",
         (matcher_id, provider_id)
     )
+    if cur.rowcount:
+        _auto_update_status(db, config_id)
     db.commit()
     flash('Matcher removed.' if cur.rowcount else 'Matcher not found.', 'success')
     return redirect(url_for('admin.provider_edit',
@@ -667,15 +706,15 @@ def unmatched_detail(email_id):
 
     # Privacy: if user has public configs, hide email body
     has_public = db.execute(
-        "SELECT COUNT(*) FROM configurations WHERE owner_id=? AND status='public'",
+        "SELECT COUNT(*) FROM configurations WHERE owner_id=? AND visibility='public'",
         (user_id,)
     ).fetchone()[0] > 0
 
-    # User's configurations for the target config selector
+    # User's private configurations for the target config selector
     user_configs = db.execute(
         "SELECT id, name, version FROM configurations "
-        "WHERE owner_id=? AND status IN ('draft','active') "
-        "AND source_config_id IS NULL "
+        "WHERE owner_id=? AND visibility='private' "
+        "AND status IN ('incomplete','valid') "
         "ORDER BY name, version",
         (user_id,)
     ).fetchall()
@@ -687,9 +726,7 @@ def unmatched_detail(email_id):
             # ── Target configuration ──────────────────────────────────────────
             config_choice = request.form.get('config_choice', '').strip()
             if config_choice == 'new':
-                new_name    = request.form.get('new_config_name', '').strip()
-                new_version = request.form.get('new_config_version', '').strip() or \
-                              datetime.now(timezone.utc).strftime('%Y%m-01')
+                new_name = request.form.get('new_config_name', '').strip()
                 if not new_name:
                     flash('Configuration name is required.', 'error')
                     return render_template('admin/unmatched_detail.html',
@@ -697,12 +734,12 @@ def unmatched_detail(email_id):
                                            has_public=has_public)
                 try:
                     db.execute(
-                        "INSERT INTO configurations (owner_id, name, version) VALUES (?,?,?)",
-                        (user_id, new_name, new_version)
+                        "INSERT INTO configurations (owner_id, name, version) VALUES (?,?,'-1')",
+                        (user_id, new_name)
                     )
                     config_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
                 except sqlite3.IntegrityError:
-                    flash(f"Configuration '{new_name}' v{new_version} already exists.", 'error')
+                    flash(f"A configuration named '{new_name}' already exists.", 'error')
                     return render_template('admin/unmatched_detail.html',
                                            row=row, user_configs=user_configs,
                                            has_public=has_public)
@@ -793,6 +830,7 @@ def unmatched_detail(email_id):
                     (provider_id, sender, subject_pattern)
                 )
                 db.execute("DELETE FROM unmatched_emails WHERE id=?", (email_id,))
+                _auto_update_status(db, config_id)
                 db.commit()
             except sqlite3.IntegrityError:
                 flash(f"Provider tag '{tag}' already exists.", 'error')
@@ -828,25 +866,17 @@ def marketplace_browse():
     user_id = session['user_id']
     db      = get_db()
 
-    # All public configurations, grouped by (owner, name) showing latest version
     configs = db.execute(
-        "SELECT c.*, u.username AS owner_name, "
-        "  (SELECT id FROM configurations "
-        "   WHERE owner_id=c.owner_id AND name=c.name AND status='public' "
-        "   ORDER BY version DESC LIMIT 1) AS latest_id "
+        "SELECT c.*, u.username AS owner_name "
         "FROM configurations c "
         "JOIN users u ON u.id = c.owner_id "
-        "WHERE c.status='public' "
+        "WHERE c.visibility='public' AND c.status='valid' "
         "ORDER BY c.name, c.version DESC",
-        ()
     ).fetchall()
 
-    # Mark which ones the user is already subscribed to
     subscribed = set(
         row[0] for row in db.execute(
-            "SELECT source_config_id FROM configurations "
-            "WHERE owner_id=? AND source_config_id IS NOT NULL",
-            (user_id,)
+            "SELECT config_id FROM subscriptions WHERE user_id=?", (user_id,)
         ).fetchall()
     )
 
@@ -862,108 +892,59 @@ def marketplace_subscribe(src_config_id):
     db      = get_db()
 
     src = db.execute(
-        "SELECT * FROM configurations WHERE id=? AND status='public'",
+        "SELECT * FROM configurations WHERE id=? AND visibility='public'",
         (src_config_id,)
     ).fetchone()
     if not src:
         flash('Configuration not found or not public.', 'error')
         return redirect(url_for('admin.marketplace_browse'))
 
-    if src['owner_id'] == user_id:
-        flash('You cannot subscribe to your own configuration.', 'error')
-        return redirect(url_for('admin.marketplace_browse'))
-
     existing = db.execute(
-        "SELECT id FROM configurations WHERE owner_id=? AND source_config_id=?",
+        "SELECT id FROM subscriptions WHERE user_id=? AND config_id=?",
         (user_id, src_config_id)
     ).fetchone()
     if existing:
         flash('Already subscribed to this configuration.', 'error')
         return redirect(url_for('admin.marketplace_browse'))
 
-    # Create subscriber's local copy
     db.execute(
-        "INSERT INTO configurations "
-        "  (owner_id, name, version, description, status, source_config_id, prompt_assigned) "
-        "VALUES (?,?,?,?,'active',?,?)",
-        (user_id, src['name'], src['version'], src['description'],
-         src_config_id, src['prompt_assigned'])
+        "INSERT INTO subscriptions (user_id, config_id) VALUES (?, ?)",
+        (user_id, src_config_id)
     )
-    local_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
-
-    # Copy providers + matchers, clearing sample_email
-    _copy_providers(db, src_config_id, user_id, local_id)
     db.commit()
-    flash(f"Subscribed to '{src['name']}' v{src['version']}.", 'success')
+    flash(f"Subscribed to '{src['name']}' {src['version']}.", 'success')
     return redirect(url_for('admin.dashboard'))
 
 
-@admin_bp.post('/marketplace/<int:src_config_id>/update/<int:local_config_id>')
+@admin_bp.post('/marketplace/<int:old_config_id>/update/<int:new_config_id>')
 @login_required
-def marketplace_update(src_config_id, local_config_id):
+def marketplace_update(old_config_id, new_config_id):
     user_id = session['user_id']
     db      = get_db()
 
-    local = _get_config(local_config_id, user_id)
-    if not local or local['source_config_id'] is None:
+    existing = db.execute(
+        "SELECT id FROM subscriptions WHERE user_id=? AND config_id=?",
+        (user_id, old_config_id)
+    ).fetchone()
+    if not existing:
         flash('Subscription not found.', 'error')
         return redirect(url_for('admin.dashboard'))
 
-    # Find the specific newer public config to update to
-    src = db.execute(
-        "SELECT * FROM configurations WHERE id=? AND status='public'",
-        (src_config_id,)
+    new_cfg = db.execute(
+        "SELECT name, version FROM configurations WHERE id=? AND visibility='public'",
+        (new_config_id,)
     ).fetchone()
-    if not src:
+    if not new_cfg:
         flash('New version not found.', 'error')
         return redirect(url_for('admin.dashboard'))
 
-    # Replace providers: delete old copies, copy new ones
-    db.execute("DELETE FROM providers WHERE config_id=?", (local_config_id,))
-    _copy_providers(db, src_config_id, user_id, local_config_id)
-
     db.execute(
-        "UPDATE configurations SET version=?, description=?, source_config_id=?, "
-        "updated_at=datetime('now') WHERE id=?",
-        (src['version'], src['description'], src_config_id, local_config_id)
+        "UPDATE subscriptions SET config_id=? WHERE user_id=? AND config_id=?",
+        (new_config_id, user_id, old_config_id)
     )
     db.commit()
-    flash(f"Updated to '{src['name']}' v{src['version']}.", 'success')
+    flash(f"Updated to '{new_cfg['name']}' {new_cfg['version']}.", 'success')
     return redirect(url_for('admin.dashboard'))
-
-
-def _copy_providers(db, src_config_id: int, dest_user_id: int, dest_config_id: int):
-    """Copy all providers+matchers from src_config to dest_config, clearing sample_email."""
-    src_providers = db.execute(
-        "SELECT * FROM providers WHERE config_id=?", (src_config_id,)
-    ).fetchall()
-    for prov in src_providers:
-        tag = prov['tag']
-        base_tag, suffix = tag, 1
-        while db.execute("SELECT id FROM providers WHERE user_id=? AND tag=?",
-                         (dest_user_id, tag)).fetchone():
-            tag = f"{base_tag}_{suffix}"
-            suffix += 1
-
-        db.execute(
-            "INSERT INTO providers "
-            "  (user_id, config_id, tag, extract_source, extract_mode, "
-            "   nonce_start_marker, nonce_end_marker, nonce_length, sample_email) "
-            "VALUES (?,?,?,?,?,?,?,?,NULL)",
-            (dest_user_id, dest_config_id, tag,
-             prov['extract_source'], prov['extract_mode'],
-             prov['nonce_start_marker'], prov['nonce_end_marker'],
-             prov['nonce_length'])
-        )
-        new_prov_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
-        for m in db.execute(
-            "SELECT * FROM provider_matchers WHERE provider_id=?", (prov['id'],)
-        ).fetchall():
-            db.execute(
-                "INSERT INTO provider_matchers (provider_id, sender_email, subject_pattern) "
-                "VALUES (?,?,?)",
-                (new_prov_id, m['sender_email'], m['subject_pattern'])
-            )
 
 
 # ── Account settings ──────────────────────────────────────────────────────────
@@ -1018,8 +999,13 @@ def account_gmail_xml():
         "JOIN providers p ON p.id = pm.provider_id "
         "LEFT JOIN configurations c ON c.id = p.config_id "
         "WHERE p.user_id=? AND pm.sender_email IS NOT NULL "
-        "  AND (p.config_id IS NULL OR c.status IN ('active','tested','public'))",
-        (user_id,)
+        "  AND (p.config_id IS NULL "
+        "       OR (c.visibility='private' AND c.activated=1 "
+        "           AND c.status IN ('valid','valid_tested')) "
+        "       OR (c.visibility='public' "
+        "           AND EXISTS (SELECT 1 FROM subscriptions s "
+        "                       WHERE s.user_id=? AND s.config_id=c.id)))",
+        (user_id, user_id)
     ).fetchall()
 
     # Build Atom/Gmail filter XML
@@ -1063,7 +1049,7 @@ def admin_users():
         "SELECT u.id, u.username, u.email, u.is_admin, u.created_at, "
         "       COUNT(DISTINCT c.id) AS config_count "
         "FROM users u "
-        "LEFT JOIN configurations c ON c.owner_id = u.id AND c.source_config_id IS NULL "
+        "LEFT JOIN configurations c ON c.owner_id = u.id AND c.visibility='private' "
         "GROUP BY u.id ORDER BY u.username"
     ).fetchall()
     return render_template('admin/admin_users.html', users=users)
@@ -1188,19 +1174,44 @@ def admin_marketplace():
 @admin_bp.post('/admin/marketplace/<int:config_id>/approve')
 @admin_required
 def admin_marketplace_approve(config_id):
-    db = get_db()
-    db.execute(
-        "UPDATE configurations SET status='public', updated_at=datetime('now') WHERE id=?",
+    db     = get_db()
+    config = db.execute(
+        "SELECT * FROM configurations WHERE id=? AND status='pending_review'",
         (config_id,)
+    ).fetchone()
+    if not config:
+        flash('Configuration not found or not pending review.', 'error')
+        return redirect(url_for('admin.admin_marketplace'))
+
+    # Assign version: YYYYMM-NN (auto-increment within the publication month)
+    year_month = datetime.now(timezone.utc).strftime('%Y%m')
+    latest = db.execute(
+        "SELECT version FROM configurations "
+        "WHERE name=? AND visibility='public' AND version LIKE ? "
+        "ORDER BY version DESC LIMIT 1",
+        (config['name'], f'{year_month}-%')
+    ).fetchone()
+    nn      = (int(latest['version'].split('-')[1]) + 1) if latest else 1
+    version = f"{year_month}-{nn:02d}"
+
+    db.execute(
+        "UPDATE configurations SET visibility='public', status='valid', version=?, "
+        "activated=0, updated_at=datetime('now') WHERE id=?",
+        (version, config_id)
     )
     # Clear sample_email from all providers for privacy
     db.execute("UPDATE providers SET sample_email=NULL WHERE config_id=?", (config_id,))
+    # Auto-subscribe the owner
+    db.execute(
+        "INSERT OR IGNORE INTO subscriptions (user_id, config_id) VALUES (?, ?)",
+        (config['owner_id'], config_id)
+    )
     db.execute(
         "INSERT INTO marketplace_reviews (config_id, reviewer_id, decision) VALUES (?,?,?)",
         (config_id, session['user_id'], 'approved')
     )
     db.commit()
-    flash('Configuration approved and published.', 'success')
+    flash(f"Configuration approved and published as {version}.", 'success')
     return redirect(url_for('admin.admin_marketplace'))
 
 
@@ -1210,7 +1221,7 @@ def admin_marketplace_reject(config_id):
     note = request.form.get('note', '').strip() or None
     db   = get_db()
     db.execute(
-        "UPDATE configurations SET status='tested', updated_at=datetime('now') WHERE id=?",
+        "UPDATE configurations SET status='valid_tested', updated_at=datetime('now') WHERE id=?",
         (config_id,)
     )
     db.execute(

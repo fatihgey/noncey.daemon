@@ -8,21 +8,30 @@ CREATE TABLE IF NOT EXISTS users (
 );
 
 CREATE TABLE IF NOT EXISTS configurations (
-    id               INTEGER PRIMARY KEY AUTOINCREMENT,
-    owner_id         INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    name             TEXT    NOT NULL,
-    version          TEXT    NOT NULL,
-    description      TEXT    DEFAULT NULL,
-    status           TEXT    NOT NULL DEFAULT 'draft',
-    -- draft | active | tested | pending_review | public
-    source_config_id INTEGER REFERENCES configurations(id) ON DELETE SET NULL,
-    -- non-null = this is a subscribed/copied configuration
-    prompt_assigned  INTEGER NOT NULL DEFAULT 0,
-    test_threshold   INTEGER NOT NULL DEFAULT 3,
-    test_count       INTEGER NOT NULL DEFAULT 0,
-    created_at       TEXT    NOT NULL DEFAULT (datetime('now')),
-    updated_at       TEXT    NOT NULL DEFAULT (datetime('now')),
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    owner_id          INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name              TEXT    NOT NULL,
+    version           TEXT    NOT NULL DEFAULT '-1',
+    description       TEXT    DEFAULT NULL,
+    status            TEXT    NOT NULL DEFAULT 'incomplete',
+    -- incomplete | valid | valid_tested | pending_review
+    visibility        TEXT    NOT NULL DEFAULT 'private',
+    -- private | public
+    activated         INTEGER NOT NULL DEFAULT 0,
+    prompt            TEXT    DEFAULT NULL,
+    -- JSON: {"url": "...", "selector": "..."}
+    client_test_count INTEGER NOT NULL DEFAULT 0,
+    created_at        TEXT    NOT NULL DEFAULT (datetime('now')),
+    updated_at        TEXT    NOT NULL DEFAULT (datetime('now')),
     UNIQUE(owner_id, name, version)
+);
+
+CREATE TABLE IF NOT EXISTS subscriptions (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    config_id  INTEGER NOT NULL REFERENCES configurations(id) ON DELETE CASCADE,
+    created_at TEXT    NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(user_id, config_id)
 );
 
 CREATE TABLE IF NOT EXISTS providers (
@@ -90,3 +99,5 @@ CREATE INDEX IF NOT EXISTS idx_unmatched_user         ON unmatched_emails(user_i
 CREATE INDEX IF NOT EXISTS idx_providers_config       ON providers(config_id);
 CREATE INDEX IF NOT EXISTS idx_configs_owner          ON configurations(owner_id);
 CREATE INDEX IF NOT EXISTS idx_configs_status         ON configurations(status);
+CREATE INDEX IF NOT EXISTS idx_subscriptions_user     ON subscriptions(user_id);
+CREATE INDEX IF NOT EXISTS idx_subscriptions_config   ON subscriptions(config_id);

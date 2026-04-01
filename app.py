@@ -21,6 +21,7 @@ Flask CLI:
 """
 
 import hashlib
+import json
 import sqlite3
 from datetime import datetime, timedelta, timezone
 from functools import wraps
@@ -233,45 +234,141 @@ def delete_nonce(nonce_id: int):
 @app.get('/api/configs')
 @require_auth
 def list_configs():
-    db   = get_db()
-    rows = db.execute(
-        "SELECT id, name, version, status, prompt_assigned "
+    db = get_db()
+
+    # Own private configs: valid enough to be useful to the extension
+    own_rows = db.execute(
+        "SELECT id, name, version, status, visibility, activated, prompt "
         "FROM   configurations "
-        "WHERE  owner_id = ? "
-        "  AND  status IN ('active','tested','pending_review','public') "
+        "WHERE  owner_id = ? AND visibility = 'private' "
+        "  AND  status IN ('valid', 'valid_tested', 'pending_review') "
         "ORDER  BY name, version",
         (g.user_id,)
     ).fetchall()
 
+    # Subscribed public configs
+    sub_rows = db.execute(
+        "SELECT c.id, c.name, c.version, c.status, c.visibility, c.prompt "
+        "FROM   configurations c "
+        "JOIN   subscriptions s ON s.config_id = c.id "
+        "WHERE  s.user_id = ? AND c.visibility = 'public' "
+        "ORDER  BY c.name, c.version",
+        (g.user_id,)
+    ).fetchall()
+
     result = []
-    for row in rows:
+
+    for row in own_rows:
         tags = db.execute(
-            "SELECT tag FROM providers WHERE config_id = ? AND user_id = ?",
-            (row['id'], g.user_id)
+            "SELECT tag FROM providers WHERE config_id = ?", (row['id'],)
         ).fetchall()
+        prompt_data = json.loads(row['prompt']) if row['prompt'] else None
         result.append({
-            'id':              row['id'],
-            'name':            row['name'],
-            'version':         row['version'],
-            'status':          row['status'],
-            'prompt_assigned': bool(row['prompt_assigned']),
-            'provider_tags':   [t['tag'] for t in tags],
+            'id':            row['id'],
+            'name':          row['name'],
+            'version':       row['version'],
+            'status':        row['status'],
+            'visibility':    row['visibility'],
+            'activated':     bool(row['activated']),
+            'prompt':        prompt_data,
+            'is_owned':      True,
+            'provider_tags': [t['tag'] for t in tags],
         })
+
+    for row in sub_rows:
+        tags = db.execute(
+            "SELECT tag FROM providers WHERE config_id = ?", (row['id'],)
+        ).fetchall()
+        prompt_data = json.loads(row['prompt']) if row['prompt'] else None
+        result.append({
+            'id':            row['id'],
+            'name':          row['name'],
+            'version':       row['version'],
+            'status':        row['status'],
+            'visibility':    row['visibility'],
+            'activated':     None,
+            'prompt':        prompt_data,
+            'is_owned':      False,
+            'provider_tags': [t['tag'] for t in tags],
+        })
+
     return jsonify(result), 200
 
 
-@app.post('/api/configs/<int:config_id>/prompt-assigned')
+@app.post('/api/configs/<int:config_id>/prompt')
 @require_auth
-def set_prompt_assigned(config_id: int):
+def set_prompt(config_id: int):
+    data     = request.get_json(silent=True) or {}
+    url      = data.get('url', '').strip()
+    selector = data.get('selector', '').strip()
+
+    if not url or not selector:
+        return jsonify({'error': 'url and selector required'}), 400
+
     db  = get_db()
     cur = db.execute(
-        "UPDATE configurations SET prompt_assigned = 1 "
-        "WHERE  id = ? AND owner_id = ?",
-        (config_id, g.user_id)
+        "UPDATE configurations SET prompt = ?, updated_at = datetime('now') "
+        "WHERE  id = ? AND owner_id = ? AND visibility = 'private'",
+        (json.dumps({'url': url, 'selector': selector}), config_id, g.user_id)
     )
-    db.commit()
     if cur.rowcount == 0:
         return jsonify({'error': 'Not found'}), 404
+
+    # Structural change: reset valid_tested → valid; or promote incomplete → valid
+    config = db.execute(
+        "SELECT status FROM configurations WHERE id = ?", (config_id,)
+    ).fetchone()
+    if config:
+        if config['status'] == 'valid_tested':
+            db.execute(
+                "UPDATE configurations SET status = 'valid', updated_at = datetime('now') "
+                "WHERE id = ?", (config_id,)
+            )
+        elif config['status'] == 'incomplete':
+            # Check if channels + headers are present
+            providers = db.execute(
+                "SELECT id FROM providers WHERE config_id = ?", (config_id,)
+            ).fetchall()
+            has_headers = any(
+                db.execute(
+                    "SELECT id FROM provider_matchers WHERE provider_id = ?", (p['id'],)
+                ).fetchone()
+                for p in providers
+            )
+            if has_headers:
+                db.execute(
+                    "UPDATE configurations SET status = 'valid', "
+                    "updated_at = datetime('now') WHERE id = ?",
+                    (config_id,)
+                )
+
+    db.commit()
+    return '', 204
+
+
+@app.post('/api/configs/<int:config_id>/client-test')
+@require_auth
+def report_client_test(config_id: int):
+    db = get_db()
+    # Allow for both owned private configs and subscribed public configs
+    cur = db.execute(
+        "UPDATE configurations "
+        "SET client_test_count = client_test_count + 1, updated_at = datetime('now') "
+        "WHERE id = ? "
+        "  AND (owner_id = ? "
+        "       OR id IN (SELECT config_id FROM subscriptions WHERE user_id = ?))",
+        (config_id, g.user_id, g.user_id)
+    )
+    if cur.rowcount == 0:
+        return jsonify({'error': 'Not found'}), 404
+
+    # Advance to valid_tested once 3 successful fills reported
+    db.execute(
+        "UPDATE configurations SET status = 'valid_tested', updated_at = datetime('now') "
+        "WHERE id = ? AND status = 'valid' AND client_test_count >= 3",
+        (config_id,)
+    )
+    db.commit()
     return '', 204
 
 
