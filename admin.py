@@ -227,7 +227,10 @@ def dashboard():
     # Subscribed public configurations
     sub_configs = db.execute(
         "SELECT c.*, "
-        "  (SELECT COUNT(*) FROM providers p WHERE p.config_id=c.id) AS provider_count "
+        "  (SELECT COUNT(*) FROM providers p WHERE p.config_id=c.id) AS provider_count, "
+        "  (SELECT COUNT(*) FROM nonces n "
+        "   JOIN providers p2 ON n.provider_id=p2.id "
+        "   WHERE p2.config_id=c.id) AS nonce_count "
         "FROM configurations c "
         "JOIN subscriptions s ON s.config_id=c.id "
         "WHERE s.user_id=? AND c.visibility='public' "

@@ -20,14 +20,38 @@
       align-items: center;
       gap: 0.25rem;
       padding: 0.6rem 1.25rem;
-      flex-wrap: wrap;
+      flex-wrap: nowrap;
     }
-    nav .brand { font-weight: 700; color: #fff; text-decoration: none; margin-right: 0.75rem; font-size: 1.05rem; }
-    nav a { color: #ccc; text-decoration: none; padding: 0.3rem 0.65rem; border-radius: 3px; font-size: 0.875rem; }
-    nav a:hover { color: #fff; background: rgba(255,255,255,.12); }
-    nav .sep { color: #444; margin: 0 0.25rem; }
+    nav .brand { font-weight: 700; color: #fff; text-decoration: none; margin-right: 0.75rem; font-size: 1.05rem; flex-shrink: 0; }
+    nav > a { color: #ccc; text-decoration: none; padding: 0.3rem 0.65rem; border-radius: 3px; font-size: 0.875rem; flex-shrink: 0; }
+    nav > a:hover { color: #fff; background: rgba(255,255,255,.12); }
     nav .spacer { flex: 1; }
-    nav .user-chip { color: #aaa; font-size: 0.82rem; margin-right: 0.5rem; }
+    /* dropdown */
+    .nav-dd { position: relative; display: inline-flex; align-items: stretch; flex-shrink: 0; }
+    .nav-dd-label {
+      color: #ccc; padding: 0.3rem 0.65rem; border-radius: 3px;
+      font-size: 0.875rem; cursor: default; white-space: nowrap;
+      user-select: none; display: flex; align-items: center;
+    }
+    .nav-dd:hover > .nav-dd-label { color: #fff; background: rgba(255,255,255,.12); }
+    .nav-dd-menu {
+      display: none; position: absolute; top: 100%; left: 0;
+      background: #1a1a2e; min-width: 160px;
+      border: 1px solid rgba(255,255,255,.15); border-radius: 3px;
+      padding: .3rem 0; z-index: 500;
+    }
+    .nav-dd-menu-r { left: auto; right: 0; }
+    .nav-dd:hover > .nav-dd-menu { display: block; }
+    .nav-dd-menu a,
+    .nav-dd-menu button {
+      display: block; width: 100%; padding: .45rem .9rem;
+      color: #ccc; text-decoration: none; white-space: nowrap;
+      background: none; border: none; text-align: left;
+      font-size: 0.875rem; cursor: pointer; font-family: inherit; line-height: 1.4;
+    }
+    .nav-dd-menu a:hover,
+    .nav-dd-menu button:hover { color: #fff; background: rgba(255,255,255,.12); }
+    .nav-dd-menu form { margin: 0; padding: 0; }
     .page-wrap {
       max-width: 1000px;
       margin: 2rem auto;
@@ -101,6 +125,8 @@
     .badge { display: inline-block; padding: 0.15em 0.55em; border-radius: 3px; font-size: 0.78rem; font-weight: 600; }
     .badge-incomplete { background: #e9ecef; color: #495057; }
     .badge-active  { background: #cce5ff; color: #004085; }
+    .badge-valid   { background: #cce5ff; color: #004085; }
+    .badge-valid_tested { background: #d4edda; color: #155724; }
     .badge-tested  { background: #d4edda; color: #155724; }
     .badge-pending_review { background: #fff3cd; color: #856404; }
     .badge-public  { background: #d1ecf1; color: #0c5460; }
@@ -111,20 +137,28 @@
 {% if current_user %}
 <nav>
   <a class="brand" href="{{ url_for('admin.dashboard') }}">noncey</a>
-  <a href="{{ url_for('admin.dashboard') }}">Dashboard</a>
+  <a href="{{ url_for('admin.dashboard') }}">Configurations</a>
   <a href="{{ url_for('admin.marketplace_browse') }}">Marketplace</a>
   <a href="{{ url_for('admin.unmatched_list') }}">Unmatched</a>
-  <a href="{{ url_for('admin.account_password') }}">Account</a>
   {% if user_is_admin %}
-  <span class="sep">|</span>
-  <a href="{{ url_for('admin.admin_users') }}">Users</a>
-  <a href="{{ url_for('admin.admin_marketplace') }}">Review queue</a>
+  <div class="nav-dd">
+    <span class="nav-dd-label">Admin ▾</span>
+    <div class="nav-dd-menu">
+      <a href="{{ url_for('admin.admin_users') }}">Users</a>
+      <a href="{{ url_for('admin.admin_marketplace') }}">Review Queue</a>
+    </div>
+  </div>
   {% endif %}
   <span class="spacer"></span>
-  <span class="user-chip">{{ current_user.username }}</span>
-  <form method="post" action="{{ url_for('admin.auth_logout') }}" class="inline">
-    <button class="btn" type="submit" style="font-size:0.82rem;padding:0.25rem 0.6rem;">Log out</button>
-  </form>
+  <div class="nav-dd">
+    <span class="nav-dd-label">{{ current_user.username }} ▾</span>
+    <div class="nav-dd-menu nav-dd-menu-r">
+      <a href="{{ url_for('admin.account_password') }}">Settings</a>
+      <form method="post" action="{{ url_for('admin.auth_logout') }}">
+        <button type="submit">Logout</button>
+      </form>
+    </div>
+  </div>
 </nav>
 {% endif %}
 

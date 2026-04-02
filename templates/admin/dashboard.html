@@ -1,102 +1,105 @@
 {% extends 'admin/_base.html' %}
-{% block title %}noncey — dashboard{% endblock %}
+{% block title %}noncey — configurations{% endblock %}
 {% block content %}
 
-<h1>Dashboard</h1>
+<h1>Configurations</h1>
 
-{% if unmatched_count %}
-<div class="flash info">
-  You have <a href="{{ url_for('admin.unmatched_list') }}"><strong>{{ unmatched_count }} unmatched email{{ 's' if unmatched_count != 1 }}</strong></a> waiting for channel setup.
-</div>
-{% endif %}
-
-<div style="display:flex;gap:.75rem;margin-bottom:1.25rem;flex-wrap:wrap;align-items:center;">
-  <a class="btn btn-primary" href="{{ url_for('admin.wizard_start') }}">+ New configuration</a>
-  <a class="btn" href="{{ url_for('admin.account_gmail_xml') }}">Download Gmail filters</a>
-</div>
-
-{# ── Own private configurations ── #}
-<h2>My configurations</h2>
-
-{% if own_configs %}
-<table>
+{% if own_configs or sub_configs %}
+<table id="configs-table">
   <thead>
     <tr>
+      <th>Type</th>
       <th>Name</th>
-      <th>Status</th>
-      <th>Channels</th>
       <th>Waiting</th>
-      <th>Actions</th>
+      <th></th>
     </tr>
   </thead>
   <tbody>
     {% for c in own_configs %}
     <tr>
+      <td style="white-space:nowrap;color:#555;">Private</td>
       <td>
         <a href="{{ url_for('admin.config_detail', config_id=c.id) }}"><strong>{{ c.name }}</strong></a>
+        <span class="badge badge-{{ c.status }}" style="margin-left:.35rem;">{{ c.status.replace('_', ' ') }}</span>
         {% if c.activated %}
-          <span class="badge badge-ok" style="font-size:.75rem;vertical-align:middle;">active</span>
+          <span class="badge badge-success" style="margin-left:.25rem;background:#28a745;color:#fff;">active</span>
         {% endif %}
       </td>
-      <td><span class="badge badge-{{ c.status }}">{{ c.status.replace('_', ' ') }}</span></td>
-      <td>{{ c.provider_count }}</td>
       <td>
         {{ c.nonce_count }}
         {% if c.nonce_count %}
           <form class="inline" method="post"
                 action="{{ url_for('admin.config_clear_nonces', config_id=c.id) }}"
-                style="display:inline;margin-left:.4rem;">
-            <button class="btn btn-sm" type="submit"
-                    style="font-size:.75rem;padding:.15rem .5rem;">Clear</button>
+                style="margin-left:.4rem;">
+            <button class="btn" type="submit" style="font-size:.75rem;padding:.15rem .5rem;">Clear</button>
           </form>
         {% endif %}
       </td>
       <td class="actions">
         <a class="btn" href="{{ url_for('admin.config_detail', config_id=c.id) }}">Open</a>
+      </td>
+    </tr>
+    {% endfor %}
+
+    {% for c in sub_configs %}
+    <tr data-unsub-url="{{ url_for('admin.marketplace_unsubscribe', config_id=c.id) }}"
+        data-sub-url="{{ url_for('admin.marketplace_subscribe', src_config_id=c.id) }}">
+      <td style="white-space:nowrap;color:#0c5460;">Public</td>
+      <td>
+        <a href="{{ url_for('admin.config_detail', config_id=c.id) }}"><strong>{{ c.name }}</strong></a>
+        <span class="badge" style="background:#6c757d;color:#fff;margin-left:.35rem;">{{ c.version }}</span>
+        {% if c.id in update_available %}
+          <form class="inline" method="post"
+                action="{{ url_for('admin.marketplace_update',
+                                   old_config_id=c.id,
+                                   new_config_id=update_available[c.id]) }}">
+            <button class="btn btn-warning" type="submit"
+                    style="font-size:.75rem;padding:.15rem .55rem;margin-left:.35rem;">update available</button>
+          </form>
+        {% endif %}
+      </td>
+      <td>{{ c.nonce_count }}</td>
+      <td class="actions">
+        <a class="btn" href="{{ url_for('admin.config_detail', config_id=c.id) }}">Open</a>
+        <button class="btn sub-toggle" type="button">Unsubscribe</button>
       </td>
     </tr>
     {% endfor %}
   </tbody>
 </table>
 {% else %}
-<p class="empty">No private configurations yet. <a href="{{ url_for('admin.config_new') }}">Create one</a> or browse the <a href="{{ url_for('admin.marketplace_browse') }}">marketplace</a>.</p>
+<p class="empty" style="margin-bottom:1.25rem;">
+  No configurations yet.
+</p>
 {% endif %}
 
-{# ── Subscribed public configurations ── #}
-{% if sub_configs %}
-<h2 style="margin-top:2rem;">Subscriptions</h2>
-<table>
-  <thead>
-    <tr>
-      <th>Name</th>
-      <th>Version</th>
-      <th>Channels</th>
-      <th>Actions</th>
-    </tr>
-  </thead>
-  <tbody>
-    {% for c in sub_configs %}
-    <tr>
-      <td>
-        <a href="{{ url_for('admin.config_detail', config_id=c.id) }}"><strong>{{ c.name }}</strong></a>
-      </td>
-      <td>{{ c.version }}</td>
-      <td>{{ c.provider_count }}</td>
-      <td class="actions">
-        <a class="btn" href="{{ url_for('admin.config_detail', config_id=c.id) }}">Open</a>
-        {% if c.id in update_available %}
-          <form class="inline" method="post"
-                action="{{ url_for('admin.marketplace_update',
-                                   old_config_id=c.id,
-                                   new_config_id=update_available[c.id]) }}">
-            <button class="btn btn-warning" type="submit">Update available</button>
-          </form>
-        {% endif %}
-      </td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
-{% endif %}
+<div style="display:flex;gap:.75rem;margin-top:1.25rem;flex-wrap:wrap;align-items:center;">
+  <a class="btn btn-primary" href="{{ url_for('admin.wizard_start') }}">+ New configuration</a>
+  <a class="btn" href="{{ url_for('admin.account_gmail_xml') }}">Download Gmail filters</a>
+</div>
+
+<script>
+document.querySelectorAll('.sub-toggle').forEach(function(btn) {
+  btn.addEventListener('click', function() {
+    var row = btn.closest('tr');
+    var subscribed = btn.textContent.trim() === 'Unsubscribe';
+    var url = subscribed ? row.dataset.unsubUrl : row.dataset.subUrl;
+
+    fetch(url, { method: 'POST' }).then(function(r) {
+      if (r.ok || r.redirected) {
+        if (subscribed) {
+          row.style.textDecoration = 'line-through';
+          row.style.opacity = '.4';
+          btn.textContent = 'Subscribe';
+        } else {
+          row.style.textDecoration = '';
+          row.style.opacity = '';
+          btn.textContent = 'Unsubscribe';
+        }
+      }
+    }).catch(function() {});
+  });
+});
+</script>
 
 {% endblock %}
