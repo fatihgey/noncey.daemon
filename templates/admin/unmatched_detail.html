@@ -123,7 +123,7 @@
     {% if row.sender %}
     <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;margin-bottom:.35rem;">
       <input type="radio" name="sender_mode" value="sample" checked>
-      Outer sender (forwarder) — <code>{{ row.sender }}</code>
+      {% if row.fwd_sender %}Outer sender (forwarder){% else %}Origin{% endif %} — <code>{{ row.sender }}</code>
     </label>
     {% endif %}
     {% if row.fwd_sender %}

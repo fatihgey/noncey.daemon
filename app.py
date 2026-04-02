@@ -245,7 +245,7 @@ def list_configs():
         "SELECT id, name, version, status, visibility, activated, prompt "
         "FROM   configurations "
         "WHERE  owner_id = ? AND visibility = 'private' "
-        "  AND  status IN ('valid', 'valid_tested', 'pending_review') "
+        "  AND  status IN ('incomplete', 'valid', 'valid_tested', 'pending_review') "
         "ORDER  BY name, version",
         (g.user_id,)
     ).fetchall()

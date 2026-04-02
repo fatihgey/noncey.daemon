@@ -49,6 +49,18 @@ def extract_username(recipient: str) -> str:
     return local[len('nonce-'):]
 
 
+def _html_to_text(html: str) -> str:
+    """Strip HTML to plain text: remove style/script blocks, then tags, then collapse blank lines."""
+    # Remove <style> and <script> blocks wholesale (captures @media rules, font URLs, etc.)
+    text = re.sub(r'<(style|script)[^>]*>.*?</(style|script)>', ' ',
+                  html, flags=re.IGNORECASE | re.DOTALL)
+    # Strip remaining tags
+    text = re.sub(r'<[^>]+>', ' ', text)
+    # Collapse three or more consecutive newlines to two
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    return text
+
+
 def get_plaintext(msg) -> str:
     """Return the best plain-text representation of the email."""
     parts = []
@@ -58,8 +70,7 @@ def get_plaintext(msg) -> str:
             if ct == 'text/plain':
                 parts.append(part.get_content())
             elif ct == 'text/html' and not parts:
-                html = part.get_content()
-                parts.append(re.sub(r'<[^>]+>', ' ', html))
+                parts.append(_html_to_text(part.get_content()))
     else:
         parts.append(msg.get_content())
     return '\n'.join(parts)

@@ -257,7 +257,7 @@ Response: `204 No Content`, or `404` if not found / not owned by caller.
 | `GET/POST /auth/configs/new` | Create configuration |
 | `GET/POST /auth/configs/<id>/edit` | Edit configuration metadata |
 | `GET /auth/configs/<id>` | Configuration detail (providers, lifecycle controls) |
-| `POST /auth/configs/<id>/activate` | Toggle draft ↔ active |
+| `POST /auth/configs/<id>/activate` | Toggle incomplete ↔ active |
 | `POST /auth/configs/<id>/submit` | Submit tested config for marketplace review |
 | `GET/POST /auth/configs/<id>/delete` | Delete configuration |
 | `GET/POST /auth/configs/<id>/providers/new` | Add provider to config |
@@ -353,7 +353,7 @@ configurations                   ← named+versioned bundles of providers
   name             TEXT NOT NULL
   version          TEXT NOT NULL  (recommended: YYYYMM-NN)
   description      TEXT
-  status           TEXT  draft|active|tested|pending_review|public
+  status           TEXT  incomplete|valid|valid_tested|pending_review
   source_config_id FK → configurations (NULL = original; non-NULL = subscription/copy)
   prompt_assigned  INTEGER DEFAULT 0  (set by Chrome extension when prompt is stored)
   test_threshold   INTEGER DEFAULT 3  (extractions needed to advance active→tested)
@@ -418,16 +418,16 @@ marketplace_reviews              ← admin audit trail for approve/reject decisi
 ### Configuration status lifecycle
 
 ```
-draft  ──(activate: needs ≥1 provider+matcher)──▶  active
-                                                       │
-                                             test_count ≥ test_threshold
-                                             (auto-advanced by ingest.py)
-                                                       │
-                                                       ▼
-public ◀──(admin approve)── pending_review ◀──(submit)── tested
+incomplete  ──(activate: needs ≥1 provider+matcher + prompt)──▶  valid
+                                                                       │
+                                                     client_test_count ≥ 3
+                                                     (reported by extension)
+                                                                       │
+                                                                       ▼
+public ◀──(admin approve)── pending_review ◀──(submit)── valid_tested
   │                                ▲
   │                         (admin reject)
-  └────────────────────────────────┘  (back to tested; owner revises and resubmits)
+  └────────────────────────────────┘  (back to valid_tested; owner revises and resubmits)
 ```
 
 ### Subscription model

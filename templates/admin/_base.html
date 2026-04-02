@@ -92,12 +92,14 @@
     .btn-success:hover { background: #1e7e34; }
     .btn-warning { background: #e6a817; border-color: #c89010; color: #111; }
     .btn-warning:hover { background: #c89010; }
+    .btn:disabled { background: #e9ecef; border-color: #ccc; color: #999; cursor: not-allowed; }
+    .btn:disabled:hover { background: #e9ecef; }
     form.inline { display: inline; }
     .empty { color: #888; font-style: italic; }
     code { font-family: monospace; background: #f0f0f0; padding: 0.1em 0.3em; border-radius: 3px; }
     /* status badges */
     .badge { display: inline-block; padding: 0.15em 0.55em; border-radius: 3px; font-size: 0.78rem; font-weight: 600; }
-    .badge-draft   { background: #e9ecef; color: #495057; }
+    .badge-incomplete { background: #e9ecef; color: #495057; }
     .badge-active  { background: #cce5ff; color: #004085; }
     .badge-tested  { background: #d4edda; color: #155724; }
     .badge-pending_review { background: #fff3cd; color: #856404; }
