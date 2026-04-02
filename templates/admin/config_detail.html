@@ -13,6 +13,9 @@
   {% if config.visibility == 'public' %}
     <span class="badge" style="background:#0c5460;color:#fff;">public</span>
   {% endif %}
+  {% if config.status == 'valid' %}
+    <span style="font-size:.8rem;color:#555;">{{ config.client_test_count }}/3 test fills</span>
+  {% endif %}
 </div>
 
 {% if config.description %}
