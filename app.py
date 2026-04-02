@@ -9,7 +9,8 @@ REST endpoints (all under /api/):
   GET    /api/nonces
   DELETE /api/nonces/<id>
   GET    /api/configs
-  POST   /api/configs/<id>/prompt-assigned
+  POST   /api/configs/<id>/prompt
+  POST   /api/configs/<id>/client-test
 
 Admin UI (all under /auth/, proxied via nonces VirtualHost):
   see admin.py

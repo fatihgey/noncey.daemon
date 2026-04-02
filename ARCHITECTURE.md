@@ -507,70 +507,76 @@ not just provider tag.
 
 ---
 
-## 7. Planned Changes
+## 7. Configuration Model (v2)
 
-> The conceptual target state for configurations is defined in
-> **[CONCEPT_CONFIGURATION.md](CONCEPT_CONFIGURATION.md)**.
-> The items below are the concrete implementation tasks that close the gap between
-> the current code and that target.
+This section documents the finalised design for configurations, prompts, and
+the extension–daemon contract. All items below are **implemented**.
 
-### Planned Chrome Extension Changes
+### 7a. Prompt stored at daemon, authored on client
 
-The following changes to `noncey.client.chromeextension` are planned but **not yet
-implemented**. They are noted here to preserve design intent across context boundaries.
+Each configuration has an optional `prompt` column (`TEXT`, nullable JSON
+`{url, selector}`). A config with `prompt IS NULL` is considered incomplete and
+cannot be submitted for marketplace review.
 
-### 7a. Configuration-aware display
-
-Currently the extension groups nonces by `provider_tag`. With configurations:
-
-- Group nonces by `configuration_name` (from the new API field) as the primary label.
-- `provider_tag` becomes secondary / used for disambiguation when one config has multiple providers.
-- Show `configuration_name` in the popup dropdown header.
-
-### 7b. Configuration selection / active config
-
-- The extension should allow the user to select which configuration is "active" (or all).
-- Active configuration determines which nonces are surfaced automatically vs hidden.
-- Selection stored in `chrome.storage.local` as `{ activeConfigName: "github-otp" | null }`.
-  `null` = show all.
-
-### 7c. Prompt storage (`prompt_assigned` flag)
-
-- Each public configuration has an optional "prompt" — instructions for how to fill the OTP
-  field (CSS selector, iframe handling, multi-step flows, etc.).
-- The prompt lives in the extension (not the daemon) since it is browser-side logic.
-- Storage: `chrome.storage.sync` keyed by `"prompt:" + configName + ":" + configVersion`.
-- When a user subscribes to a public configuration, the extension checks if a prompt is
-  already stored for that `(name, version)`. If not, the user is prompted to enter one
-  (or it can be left blank for manual fill).
-- `prompt_assigned` on the daemon side is a boolean flag set via a new API endpoint
-  (`POST /api/configs/<id>/prompt-assigned`) once the extension stores a prompt. The flag
-  is used in the marketplace UI to indicate to prospective subscribers whether a prompt
-  is available.
-
-### 7d. New API endpoint needed (daemon side)
+The user authors the prompt visually: they navigate to the OTP login page in
+their browser, click the target input field, and the extension's `picker.js`
+captures `{url, selector}`. The extension then pushes this to the daemon:
 
 ```
-POST /api/configs/<id>/prompt-assigned
+POST /api/configs/<id>/prompt
+Authorization: Bearer <jwt>
+Body: { "url": "...", "selector": "..." }
+```
+
+Response: `200 OK` with the updated config object.
+
+### 7b. Client-side test counting
+
+`configurations.client_test_count` (INTEGER DEFAULT 0) tracks end-to-end fill
+successes reported by the extension — i.e. the extension found the selector on
+the page *and* had a nonce available. This is meaningful proof the full pipeline
+works, unlike the old daemon-side `test_count` which only counted received emails.
+
+The extension reports successes via:
+
+```
+POST /api/configs/<id>/client-test
+Authorization: Bearer <jwt>
+Body: { "count": <n> }
+```
+
+The daemon adds `n` to `client_test_count`. Once the count reaches `test_threshold`
+the config status advances from `valid` → `valid_tested` automatically.
+
+### 7c. Sync endpoint
+
+```
+GET /api/configs
 Authorization: Bearer <jwt>
 ```
-Sets `configurations.prompt_assigned = 1` for the given config (owned by the caller).
-Response: `204 No Content`. This endpoint does not exist yet in `app.py`.
 
-### 7e. Popup UX changes
+Returns all configurations relevant to the authenticated user: own private/valid
+configs and subscribed public configs. Each entry includes `name`, `version`,
+`status`, `prompt`, `providers`, `matchers`, `activated`, `visibility`,
+`is_owned`.
 
-- Add a "Configuration" section in the popup above the nonce list.
-- Show current active config name + version.
-- "Change" button opens a config selector (lists configs from `GET /api/nonces` response
-  unique `configuration_name` values, or a dedicated `GET /api/configs` endpoint).
-- Nonce list filtered accordingly.
+The extension stores the result in `chrome.storage.local` for offline use.
+Sync is always client-initiated.
 
-### 7f. Potential new REST endpoint
+### 7d. Configuration-aware extension popup
 
-`GET /api/configs` — list the authenticated user's active configurations (name, version,
-prompt_assigned, provider_tags). Allows the extension to populate the config selector
-without waiting for a nonce to arrive. Not strictly required if the extension derives the
-list from nonce history, but improves UX for fresh installs.
+- Nonces are grouped by `configuration_name` in the popup.
+- The user can select an "active" configuration; selection is stored in
+  `chrome.storage.local` as `{ activeConfigName: string | null }` (`null` = show all).
+- The popup shows the active config name + version with a "Change" button.
+
+### 7e. Dropped: `prompt_assigned`
+
+The `prompt_assigned` flag and its `POST /api/configs/<id>/prompt-assigned`
+endpoint have been removed. They were a workaround for a design where the prompt
+lived only in the extension. Now that the prompt is stored on the daemon,
+`prompt IS NOT NULL` serves as the completeness signal and no separate flag is
+needed.
 
 ---
 
