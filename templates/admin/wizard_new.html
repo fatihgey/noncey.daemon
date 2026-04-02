@@ -1,0 +1,50 @@
+{% extends 'admin/_base.html' %}
+{% block title %}noncey — new configuration{% endblock %}
+{% block content %}
+
+<style>
+  .wiz-steps { display:flex; gap:0; margin-bottom:2rem; }
+  .wiz-step {
+    flex:1; text-align:center; padding:.5rem .25rem;
+    border-bottom:3px solid #ddd; color:#999; font-size:.82rem;
+  }
+  .wiz-step.active { border-color:#0066cc; color:#0066cc; font-weight:600; }
+  .wiz-step.done   { border-color:#28a745; color:#28a745; }
+  .wiz-step span { display:block; font-size:1.05rem; font-weight:700; }
+</style>
+
+<h1>New configuration</h1>
+
+<div class="wiz-steps">
+  <div class="wiz-step active"><span>1</span>Name</div>
+  <div class="wiz-step"><span>2</span>Sample email</div>
+  <div class="wiz-step"><span>3</span>Channel</div>
+  <div class="wiz-step"><span>4</span>Prompt</div>
+  <div class="wiz-step"><span>5</span>Done</div>
+</div>
+
+<p style="color:#444;margin-bottom:1.5rem;">
+  This wizard guides you through setting up a new configuration end-to-end.
+  You will need a test OTP email and the noncey Chrome extension.
+</p>
+
+<form method="post" style="max-width:480px;">
+  <div class="field">
+    <label for="name">Configuration name</label>
+    <input type="text" id="name" name="name" required autofocus
+           autocomplete="off" spellcheck="false"
+           placeholder="e.g. GitHub, PayPal, my-bank">
+    <p class="hint">
+      Short, recognisable name for the service this configuration covers.
+      If you later publish it to the marketplace, this name must be unique.
+    </p>
+  </div>
+  <button class="btn btn-primary" type="submit">Continue →</button>
+  <a class="btn" href="{{ url_for('admin.dashboard') }}" style="margin-left:.5rem;">Cancel</a>
+</form>
+
+<p style="margin-top:2rem;font-size:.82rem;color:#888;">
+  Prefer manual setup? <a href="{{ url_for('admin.config_new') }}">Create configuration without wizard.</a>
+</p>
+
+{% endblock %}

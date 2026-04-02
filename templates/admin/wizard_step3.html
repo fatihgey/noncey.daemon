@@ -1,0 +1,114 @@
+{% extends 'admin/_base.html' %}
+{% block title %}noncey — wizard: set up prompt{% endblock %}
+{% block content %}
+
+<style>
+  .wiz-steps { display:flex; gap:0; margin-bottom:2rem; }
+  .wiz-step {
+    flex:1; text-align:center; padding:.5rem .25rem;
+    border-bottom:3px solid #ddd; color:#999; font-size:.82rem;
+  }
+  .wiz-step.active { border-color:#0066cc; color:#0066cc; font-weight:600; }
+  .wiz-step.done   { border-color:#28a745; color:#28a745; }
+  .wiz-step span { display:block; font-size:1.05rem; font-weight:700; }
+  .instr-step {
+    display:flex; gap:.75rem; align-items:flex-start;
+    padding:.6rem 0; border-bottom:1px solid #eee;
+  }
+  .instr-step:last-child { border-bottom:none; }
+  .instr-num {
+    flex-shrink:0; width:1.6rem; height:1.6rem; border-radius:50%;
+    background:#0066cc; color:#fff; font-weight:700; font-size:.85rem;
+    display:flex; align-items:center; justify-content:center;
+  }
+  #waiting-indicator {
+    display:inline-flex; align-items:center; gap:.5rem;
+    color:#856404; font-size:.9rem; margin-top:1rem;
+  }
+  .spinner {
+    width:1rem; height:1rem; border:2px solid #e6a817;
+    border-top-color:transparent; border-radius:50%;
+    animation:spin .8s linear infinite; flex-shrink:0;
+  }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  #prompt-received {
+    display:none; color:#155724; font-size:.9rem; margin-top:1rem;
+  }
+</style>
+
+<h1>{{ config.name }}</h1>
+
+<div class="wiz-steps">
+  <div class="wiz-step done"><span>1</span>Name</div>
+  <div class="wiz-step done"><span>2</span>Sample email</div>
+  <div class="wiz-step done"><span>3</span>Channel</div>
+  <div class="wiz-step active"><span>4</span>Prompt</div>
+  <div class="wiz-step"><span>5</span>Done</div>
+</div>
+
+<h2 style="margin-top:0;">Step 3 — Set up the prompt</h2>
+
+<p>
+  The prompt tells the extension which field to fill on the login page.
+  Use the noncey Chrome extension to pick the OTP input field on the target website.
+</p>
+
+<div style="background:#fff;border:1px solid #ddd;border-radius:4px;padding:1rem 1.25rem;max-width:560px;margin-bottom:1.25rem;">
+  <div class="instr-step">
+    <div class="instr-num">1</div>
+    <div>Open the website where you enter the OTP code (the login page for <strong>{{ config.name }}</strong>).</div>
+  </div>
+  <div class="instr-step">
+    <div class="instr-num">2</div>
+    <div>Click the noncey icon in your browser toolbar to open the extension.</div>
+  </div>
+  <div class="instr-step">
+    <div class="instr-num">3</div>
+    <div>
+      Find <strong>{{ config.name }}</strong> in the configuration list and click
+      <strong>Pick field</strong>.
+    </div>
+  </div>
+  <div class="instr-step">
+    <div class="instr-num">4</div>
+    <div>Click the OTP input field on the page. The extension captures the selector and sends it here automatically.</div>
+  </div>
+</div>
+
+<div id="waiting-indicator">
+  <div class="spinner"></div>
+  Waiting for the extension to send the prompt…
+</div>
+<div id="prompt-received">
+  Prompt received! Redirecting…
+</div>
+
+<p style="margin-top:1.5rem;font-size:.82rem;color:#888;">
+  Already set the prompt?
+  <a href="{{ url_for('admin.wizard_step3', config_id=config.id) }}">Check again.</a>
+</p>
+
+<div style="margin-top:2rem;">
+  <a class="btn" href="{{ url_for('admin.config_detail', config_id=config.id) }}">Skip wizard — go to configuration</a>
+</div>
+
+<script>
+(function poll() {
+  fetch('{{ url_for("admin.wizard_prompt_status", config_id=config.id) }}')
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.received) {
+        document.getElementById('waiting-indicator').style.display = 'none';
+        document.getElementById('prompt-received').style.display = 'flex';
+        setTimeout(function() {
+          window.location = '{{ url_for("admin.wizard_step4", config_id=config.id) }}';
+        }, 1200);
+      } else {
+        setTimeout(poll, 4000);
+      }
+    })
+    .catch(function() { setTimeout(poll, 8000); });
+})();
+</script>
+
+{% endblock %}

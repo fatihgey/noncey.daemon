@@ -1,0 +1,229 @@
+{% extends 'admin/_base.html' %}
+{% block title %}noncey — wizard: set up channel{% endblock %}
+{% block content %}
+
+<style>
+  .wiz-steps { display:flex; gap:0; margin-bottom:2rem; }
+  .wiz-step {
+    flex:1; text-align:center; padding:.5rem .25rem;
+    border-bottom:3px solid #ddd; color:#999; font-size:.82rem;
+  }
+  .wiz-step.active { border-color:#0066cc; color:#0066cc; font-weight:600; }
+  .wiz-step.done   { border-color:#28a745; color:#28a745; }
+  .wiz-step span { display:block; font-size:1.05rem; font-weight:700; }
+</style>
+
+<h1>{{ config.name }}</h1>
+
+<div class="wiz-steps">
+  <div class="wiz-step done"><span>1</span>Name</div>
+  <div class="wiz-step done"><span>2</span>Sample email</div>
+  <div class="wiz-step active"><span>3</span>Channel</div>
+  <div class="wiz-step"><span>4</span>Prompt</div>
+  <div class="wiz-step"><span>5</span>Done</div>
+</div>
+
+<h2 style="margin-top:0;">Step 2 — Set up channel + header</h2>
+
+<p>Review the sample email below and confirm the extraction settings.
+   The fields are pre-filled from the email.</p>
+
+{# ── Sample email summary ── #}
+<table style="max-width:600px;margin-bottom:1.5rem;">
+  <tr><th style="width:7rem;">From</th><td>{{ email.sender or '(unknown)' }}</td></tr>
+  {% if email.fwd_sender %}<tr><th>Forwarded from</th><td>{{ email.fwd_sender }}</td></tr>{% endif %}
+  <tr><th>Subject</th><td>{{ email.subject or '(no subject)' }}</td></tr>
+  <tr><th>Received</th><td>{{ email.received_at[:16] }}</td></tr>
+</table>
+
+{% if has_public %}
+<p class="hint" style="margin-bottom:1rem;">Body hidden — you have public configurations (privacy protection).</p>
+{% else %}
+<pre id="body-text" style="background:#f7f7f7;border:1px solid #ddd;padding:.75rem 1rem;
+     overflow:auto;max-height:16rem;font-size:.82rem;white-space:pre-wrap;word-break:break-all;
+     margin-bottom:1.5rem;">{{ email.body_text or '(empty)' }}</pre>
+{% endif %}
+
+<hr>
+
+<form method="post" style="max-width:600px;">
+
+  <div class="field">
+    <label for="tag">Channel name</label>
+    <input type="text" id="tag" name="tag" required autofocus
+           autocomplete="off" spellcheck="false"
+           placeholder="e.g. github, bank-otp">
+    <p class="hint">Short label used in the extension dropdown.</p>
+  </div>
+
+  <div class="field">
+    <label>Extract from</label>
+    <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;margin-bottom:.35rem;">
+      <input type="radio" name="extract_source" value="body" checked> Email body
+    </label>
+    <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;">
+      <input type="radio" name="extract_source" value="subject"> Subject line
+    </label>
+  </div>
+
+  <div class="field">
+    <label>Extraction mode</label>
+    <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;margin-bottom:.35rem;">
+      <input type="radio" name="extract_mode" value="auto" checked>
+      <span><strong>Auto</strong> — daemon detects the OTP automatically</span>
+    </label>
+    <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;margin-bottom:.35rem;">
+      <input type="radio" name="extract_mode" value="markers">
+      <strong>Start + end marker</strong>
+    </label>
+    <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;">
+      <input type="radio" name="extract_mode" value="start_length">
+      <strong>Start marker + fixed length</strong>
+    </label>
+  </div>
+
+  <div id="auto-field" class="field" style="display:none;">
+    <label for="example_otp">Example OTP</label>
+    <input type="text" id="example_otp" name="example_otp"
+           autocomplete="off" spellcheck="false" placeholder="e.g. 482910">
+    <p class="hint">
+      Enter the OTP value visible in the email above.
+      The daemon derives the extraction pattern automatically.
+    </p>
+  </div>
+
+  <div id="start-field" class="field" style="display:none;">
+    <label>Detect markers from body</label>
+    <div style="display:flex;gap:.5rem;margin-bottom:.75rem;">
+      <input type="text" id="nonce-detect" placeholder="Enter the OTP you see above"
+             autocomplete="off" spellcheck="false" style="flex:1;">
+      <button type="button" class="btn" onclick="detectMarkers()">Detect</button>
+    </div>
+    <label for="nonce_start_marker">Start marker</label>
+    <input type="text" id="nonce_start_marker" name="nonce_start_marker"
+           autocomplete="off" spellcheck="false">
+    <p class="hint">Text immediately before the OTP in the source text.</p>
+  </div>
+
+  <div id="end-field" class="field" style="display:none;">
+    <label for="nonce_end_marker">End marker <small>(optional)</small></label>
+    <input type="text" id="nonce_end_marker" name="nonce_end_marker"
+           autocomplete="off" spellcheck="false">
+    <p class="hint">Text immediately after the OTP. Leave blank to read to end of line.</p>
+  </div>
+
+  <div id="length-field" class="field" style="display:none;">
+    <label for="nonce_length">OTP length <small>(characters)</small></label>
+    <input type="number" id="nonce_length" name="nonce_length" min="1" max="20" style="width:6rem;">
+  </div>
+
+  <div class="field">
+    <label>Sender header</label>
+    {% if email.sender %}
+    <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;margin-bottom:.35rem;">
+      <input type="radio" name="sender_mode" value="sample" checked>
+      {% if email.fwd_sender %}Outer sender (forwarder){% else %}Origin{% endif %} — <code>{{ email.sender }}</code>
+    </label>
+    {% endif %}
+    {% if email.fwd_sender %}
+    <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;margin-bottom:.35rem;">
+      <input type="radio" name="sender_mode" value="fwd" {{ 'checked' if not email.sender }}>
+      Origin of forwarded email — <code>{{ email.fwd_sender }}</code>
+    </label>
+    {% endif %}
+    <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;margin-bottom:.35rem;">
+      <input type="radio" name="sender_mode" value="any" {{ 'checked' if not email.sender and not email.fwd_sender }}>
+      Any sender
+    </label>
+    <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;margin-bottom:.35rem;">
+      <input type="radio" name="sender_mode" value="custom" id="sender-custom-radio">
+      Custom:
+      <input type="text" name="sender_custom" placeholder="noreply@example.com"
+             autocomplete="off" spellcheck="false" style="width:auto;flex:1;"
+             onfocus="document.getElementById('sender-custom-radio').checked=true">
+    </label>
+  </div>
+
+  <div class="field">
+    <label>Subject header</label>
+    <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;margin-bottom:.35rem;">
+      <input type="radio" name="subject_mode" value="any" checked>
+      Any (ignore subject)
+    </label>
+    {% if email.subject %}
+    <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;margin-bottom:.35rem;">
+      <input type="radio" name="subject_mode" value="contains" id="subject-contains-radio">
+      Contains text:
+      <input type="text" name="subject_text" value="{{ email.subject }}"
+             autocomplete="off" spellcheck="false" style="width:auto;flex:1;"
+             onfocus="document.getElementById('subject-contains-radio').checked=true">
+    </label>
+    {% else %}
+    <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;margin-bottom:.35rem;">
+      <input type="radio" name="subject_mode" value="contains" id="subject-contains-radio">
+      Contains text:
+      <input type="text" name="subject_text" placeholder="Your verification code"
+             autocomplete="off" spellcheck="false" style="width:auto;flex:1;"
+             onfocus="document.getElementById('subject-contains-radio').checked=true">
+    </label>
+    {% endif %}
+    <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;margin-bottom:.35rem;">
+      <input type="radio" name="subject_mode" value="regex" id="subject-regex-radio">
+      Custom regex:
+      <input type="text" name="subject_regex" placeholder="verification.code|one.time"
+             autocomplete="off" spellcheck="false" style="width:auto;flex:1;"
+             onfocus="document.getElementById('subject-regex-radio').checked=true">
+    </label>
+    <p class="hint">Regex examples: <code>verify</code> · <code>code|otp</code> · <code>^\[GitHub\]</code></p>
+  </div>
+
+  <div style="display:flex;gap:.5rem;">
+    <input class="btn btn-primary" type="submit" value="Save channel →">
+    <a class="btn" href="{{ url_for('admin.wizard_step1', config_id=config.id) }}">← Back</a>
+  </div>
+</form>
+
+<script>
+function updateMode() {
+  var mode = document.querySelector('input[name=extract_mode]:checked').value;
+  document.getElementById('auto-field').style.display   = mode === 'auto'         ? ''     : 'none';
+  document.getElementById('start-field').style.display  = mode === 'auto'         ? 'none' : '';
+  document.getElementById('end-field').style.display    = mode === 'markers'       ? ''     : 'none';
+  document.getElementById('length-field').style.display = mode === 'start_length'  ? ''     : 'none';
+}
+document.querySelectorAll('input[name=extract_mode]').forEach(function(r) {
+  r.addEventListener('change', updateMode);
+});
+updateMode();
+
+function detectMarkers() {
+  var mode  = document.querySelector('input[name=extract_mode]:checked').value;
+  var src   = document.querySelector('input[name=extract_source]:checked').value;
+  var nonce = document.getElementById('nonce-detect').value.trim();
+  if (!nonce) { alert('Enter the OTP value first.'); return; }
+
+  var bodyEl = document.getElementById('body-text');
+  var text = src === 'subject'
+    ? {{ email.subject | tojson }}
+    : (bodyEl ? bodyEl.textContent : '');
+
+  var idx = text.indexOf(nonce);
+  if (idx === -1) { alert('OTP value not found in the selected source.'); return; }
+
+  var before    = text.substring(0, idx);
+  var lineStart = before.lastIndexOf('\n') + 1;
+  document.getElementById('nonce_start_marker').value = before.substring(lineStart);
+
+  if (mode === 'markers') {
+    var after   = text.substring(idx + nonce.length);
+    var lineEnd = after.indexOf('\n');
+    document.getElementById('nonce_end_marker').value =
+      lineEnd === -1 ? '' : after.substring(0, lineEnd).trim();
+  }
+  if (mode === 'start_length') {
+    document.getElementById('nonce_length').value = nonce.length;
+  }
+}
+</script>
+
+{% endblock %}

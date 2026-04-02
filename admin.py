@@ -13,8 +13,8 @@ from functools import wraps
 from urllib.parse import urlparse
 
 import bcrypt
-from flask import (Blueprint, Response, flash, redirect, render_template,
-                   request, session, url_for)
+from flask import (Blueprint, Response, flash, jsonify, redirect,
+                   render_template, request, session, url_for)
 
 from db import cfg, get_db
 from provision import ProvisionError, validate_username
@@ -1233,3 +1233,206 @@ def admin_marketplace_reject(config_id):
     db.commit()
     flash('Configuration rejected; owner can revise and resubmit.', 'success')
     return redirect(url_for('admin.admin_marketplace'))
+
+
+# ── Creation wizard ────────────────────────────────────────────────────────────
+
+@admin_bp.route('/wizard/new', methods=['GET', 'POST'])
+@login_required
+def wizard_start():
+    user_id = session['user_id']
+    if request.method == 'POST':
+        name = request.form.get('name', '').strip()
+        if not name:
+            flash('Name is required.', 'error')
+            return render_template('admin/wizard_new.html')
+        db = get_db()
+        try:
+            db.execute(
+                "INSERT INTO configurations (owner_id, name, version) VALUES (?, ?, '-1')",
+                (user_id, name)
+            )
+            db.commit()
+        except sqlite3.IntegrityError:
+            flash(f"A configuration named '{name}' already exists.", 'error')
+            return render_template('admin/wizard_new.html')
+        config_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
+        return redirect(url_for('admin.wizard_step1', config_id=config_id))
+    return render_template('admin/wizard_new.html')
+
+
+@admin_bp.get('/wizard/<int:config_id>/1')
+@login_required
+def wizard_step1(config_id):
+    user_id = session['user_id']
+    config  = _get_config(config_id, user_id)
+    if not config:
+        flash('Configuration not found.', 'error')
+        return redirect(url_for('admin.dashboard'))
+
+    db = get_db()
+
+    # If channels already set up, skip ahead
+    providers = db.execute(
+        "SELECT id FROM providers WHERE config_id=?", (config_id,)
+    ).fetchall()
+    if providers:
+        return redirect(url_for('admin.wizard_step3', config_id=config_id))
+
+    username      = db.execute(
+        "SELECT username FROM users WHERE id=?", (user_id,)
+    ).fetchone()['username']
+    domain        = cfg('general', 'domain', fallback='nonces.example.com')
+    noncey_address = f"nonce-{username}@{domain}"
+
+    unmatched = db.execute(
+        "SELECT id, sender, fwd_sender, subject, received_at "
+        "FROM unmatched_emails WHERE user_id=? ORDER BY received_at DESC LIMIT 20",
+        (user_id,)
+    ).fetchall()
+
+    return render_template('admin/wizard_step1.html',
+                           config=config,
+                           noncey_address=noncey_address,
+                           unmatched=unmatched)
+
+
+@admin_bp.route('/wizard/<int:config_id>/2/<int:email_id>', methods=['GET', 'POST'])
+@login_required
+def wizard_step2(config_id, email_id):
+    user_id = session['user_id']
+    config  = _get_config(config_id, user_id)
+    if not config:
+        flash('Configuration not found.', 'error')
+        return redirect(url_for('admin.dashboard'))
+
+    db    = get_db()
+    email = db.execute(
+        "SELECT * FROM unmatched_emails WHERE id=? AND user_id=?",
+        (email_id, user_id)
+    ).fetchone()
+    if not email:
+        flash('Email not found. It may have already been used.', 'error')
+        return redirect(url_for('admin.wizard_step1', config_id=config_id))
+
+    has_public = db.execute(
+        "SELECT COUNT(*) FROM configurations WHERE owner_id=? AND visibility='public'",
+        (user_id,)
+    ).fetchone()[0] > 0
+
+    if request.method == 'POST':
+        tag    = request.form.get('tag', '').strip()
+        mode   = request.form.get('extract_mode', 'auto')
+        source = request.form.get('extract_source', 'body')
+        end    = request.form.get('nonce_end_marker', '').strip() or None
+        try:
+            length = int(request.form['nonce_length']) if request.form.get('nonce_length', '').strip() else None
+        except ValueError:
+            length = None
+
+        if mode == 'auto':
+            example_otp = request.form.get('example_otp', '').strip()
+            if not example_otp:
+                flash('Example OTP is required for auto extraction mode.', 'error')
+                return render_template('admin/wizard_step2.html',
+                                       config=config, email=email, has_public=has_public)
+            derive_from = email['subject'] if source == 'subject' else (email['body_text'] or '')
+            start, length = _derive_auto_markers(derive_from, example_otp)
+            if not start:
+                flash('Example OTP not found in the email text.', 'error')
+                return render_template('admin/wizard_step2.html',
+                                       config=config, email=email, has_public=has_public)
+        else:
+            start = request.form.get('nonce_start_marker', '').strip()
+
+        sender_mode = request.form.get('sender_mode', 'any')
+        if sender_mode == 'sample':
+            sender = email['sender'] or None
+        elif sender_mode == 'fwd':
+            sender = email['fwd_sender'] or None
+        elif sender_mode == 'custom':
+            sender = request.form.get('sender_custom', '').strip().lower() or None
+        else:
+            sender = None
+
+        subject_mode = request.form.get('subject_mode', 'any')
+        if subject_mode == 'contains':
+            text            = request.form.get('subject_text', '').strip()
+            subject_pattern = re.escape(text) if text else None
+        elif subject_mode == 'regex':
+            subject_pattern = request.form.get('subject_regex', '').strip() or None
+        else:
+            subject_pattern = None
+
+        if not tag:
+            flash('Channel name is required.', 'error')
+            return render_template('admin/wizard_step2.html',
+                                   config=config, email=email, has_public=has_public)
+        if mode != 'auto' and not start:
+            flash('Start marker is required for this extraction mode.', 'error')
+            return render_template('admin/wizard_step2.html',
+                                   config=config, email=email, has_public=has_public)
+
+        try:
+            db.execute(
+                "INSERT INTO providers "
+                "  (user_id, config_id, tag, extract_source, extract_mode, "
+                "   nonce_start_marker, nonce_end_marker, nonce_length) "
+                "VALUES (?,?,?,?,?,?,?,?)",
+                (user_id, config_id, tag, source, mode, start, end, length)
+            )
+            provider_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
+            db.execute(
+                "INSERT INTO provider_matchers (provider_id, sender_email, subject_pattern) "
+                "VALUES (?,?,?)",
+                (provider_id, sender, subject_pattern)
+            )
+            db.execute("DELETE FROM unmatched_emails WHERE id=?", (email_id,))
+            _auto_update_status(db, config_id)
+            db.commit()
+        except sqlite3.IntegrityError:
+            flash(f"Channel name '{tag}' already exists.", 'error')
+            return render_template('admin/wizard_step2.html',
+                                   config=config, email=email, has_public=has_public)
+
+        return redirect(url_for('admin.wizard_step3', config_id=config_id))
+
+    return render_template('admin/wizard_step2.html',
+                           config=config, email=email, has_public=has_public)
+
+
+@admin_bp.get('/wizard/<int:config_id>/3')
+@login_required
+def wizard_step3(config_id):
+    user_id = session['user_id']
+    config  = _get_config(config_id, user_id)
+    if not config:
+        flash('Configuration not found.', 'error')
+        return redirect(url_for('admin.dashboard'))
+
+    # If prompt already received, skip to step 4
+    if config['prompt']:
+        return redirect(url_for('admin.wizard_step4', config_id=config_id))
+
+    return render_template('admin/wizard_step3.html', config=config)
+
+
+@admin_bp.get('/wizard/<int:config_id>/prompt-status')
+@login_required
+def wizard_prompt_status(config_id):
+    user_id = session['user_id']
+    config  = _get_config(config_id, user_id)
+    if not config:
+        return jsonify({'error': 'not found'}), 404
+    return jsonify({'received': config['prompt'] is not None})
+
+
+@admin_bp.get('/wizard/<int:config_id>/4')
+@login_required
+def wizard_step4(config_id):
+    user_id = session['user_id']
+    config  = _get_config(config_id, user_id)
+    if not config:
+        flash('Configuration not found.', 'error')
+        return redirect(url_for('admin.dashboard'))
+    return render_template('admin/wizard_step4.html', config=config)

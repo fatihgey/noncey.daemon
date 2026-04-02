@@ -1,0 +1,73 @@
+{% extends 'admin/_base.html' %}
+{% block title %}noncey — wizard: done{% endblock %}
+{% block content %}
+
+<style>
+  .wiz-steps { display:flex; gap:0; margin-bottom:2rem; }
+  .wiz-step {
+    flex:1; text-align:center; padding:.5rem .25rem;
+    border-bottom:3px solid #ddd; color:#999; font-size:.82rem;
+  }
+  .wiz-step.active { border-color:#0066cc; color:#0066cc; font-weight:600; }
+  .wiz-step.done   { border-color:#28a745; color:#28a745; }
+  .wiz-step span { display:block; font-size:1.05rem; font-weight:700; }
+  .done-banner {
+    background:#d4edda; border:1px solid #c3e6cb; border-radius:6px;
+    padding:1rem 1.5rem; margin-bottom:1.5rem; color:#155724;
+  }
+  .done-banner h2 { margin:0 0 .4rem; font-size:1.15rem; color:#155724; }
+  .next-steps li { margin-bottom:.5rem; }
+</style>
+
+<h1>{{ config.name }}</h1>
+
+<div class="wiz-steps">
+  <div class="wiz-step done"><span>1</span>Name</div>
+  <div class="wiz-step done"><span>2</span>Sample email</div>
+  <div class="wiz-step done"><span>3</span>Channel</div>
+  <div class="wiz-step done"><span>4</span>Prompt</div>
+  <div class="wiz-step active"><span>5</span>Done</div>
+</div>
+
+<div class="done-banner">
+  <h2>Configuration ready</h2>
+  <p style="margin:0;">
+    <strong>{{ config.name }}</strong> is now valid — it has a channel, header, and prompt.
+    Activate it to start relaying OTPs.
+  </p>
+</div>
+
+{% if config.status in ('valid', 'valid_tested') %}
+<form method="post" action="{{ url_for('admin.config_activate', config_id=config.id) }}"
+      style="margin-bottom:1.5rem;">
+  {% if config.activated %}
+    <button class="btn" type="submit">Deactivate</button>
+  {% else %}
+    <button class="btn btn-success" type="submit">Activate now</button>
+  {% endif %}
+</form>
+{% endif %}
+
+<h2>What's next</h2>
+<ul class="next-steps">
+  <li>
+    <strong>Test it end-to-end</strong> — trigger a real OTP from the service and verify
+    that the extension fills the field automatically. After 3 successful fills the
+    configuration becomes <em>valid+tested</em>.
+  </li>
+  <li>
+    <strong>Edit any time</strong> — channels, headers, and prompt can be updated from the
+    <a href="{{ url_for('admin.config_detail', config_id=config.id) }}">configuration page</a>.
+  </li>
+  <li>
+    <strong>Share with others</strong> — once tested, you can submit the configuration
+    for public marketplace visibility. It becomes read-only at that point.
+  </li>
+</ul>
+
+<div style="margin-top:1.5rem;display:flex;gap:.5rem;">
+  <a class="btn btn-primary" href="{{ url_for('admin.config_detail', config_id=config.id) }}">Open configuration</a>
+  <a class="btn" href="{{ url_for('admin.dashboard') }}">Dashboard</a>
+</div>
+
+{% endblock %}

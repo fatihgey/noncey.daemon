@@ -1,0 +1,95 @@
+{% extends 'admin/_base.html' %}
+{% block title %}noncey — wizard: capture sample email{% endblock %}
+{% block content %}
+
+<style>
+  .wiz-steps { display:flex; gap:0; margin-bottom:2rem; }
+  .wiz-step {
+    flex:1; text-align:center; padding:.5rem .25rem;
+    border-bottom:3px solid #ddd; color:#999; font-size:.82rem;
+  }
+  .wiz-step.active { border-color:#0066cc; color:#0066cc; font-weight:600; }
+  .wiz-step.done   { border-color:#28a745; color:#28a745; }
+  .wiz-step span { display:block; font-size:1.05rem; font-weight:700; }
+  .addr-box {
+    font-family:monospace; font-size:.95rem;
+    background:#f0f7ff; border:1px solid #b8d4f0;
+    border-radius:4px; padding:.5rem 1rem;
+    display:inline-block; margin:.5rem 0 1rem;
+    cursor:pointer; user-select:all;
+  }
+  .email-row { display:flex; align-items:center; gap:.75rem; padding:.4rem 0; border-bottom:1px solid #eee; }
+  .email-row:last-child { border-bottom:none; }
+</style>
+
+<h1>{{ config.name }}</h1>
+
+<div class="wiz-steps">
+  <div class="wiz-step done"><span>1</span>Name</div>
+  <div class="wiz-step active"><span>2</span>Sample email</div>
+  <div class="wiz-step"><span>3</span>Channel</div>
+  <div class="wiz-step"><span>4</span>Prompt</div>
+  <div class="wiz-step"><span>5</span>Done</div>
+</div>
+
+<h2 style="margin-top:0;">Step 1 — Capture a sample email</h2>
+
+<p>
+  Forward (or send) a real OTP email from the service to your noncey address.
+  This gives the wizard a sample to pre-fill the channel settings.
+</p>
+
+<p style="font-weight:600;margin-bottom:.25rem;">Your noncey forwarding address:</p>
+<div class="addr-box" title="Click to select all">{{ noncey_address }}</div>
+
+<p class="hint" style="margin-bottom:1.5rem;">
+  In Gmail: set up a filter that auto-forwards emails from the service sender to this address.
+  Or just forward one manually right now.
+</p>
+
+{% if unmatched %}
+<div class="flash success" style="margin-bottom:1rem;">
+  {{ unmatched | length }} unmatched email{{ 's' if unmatched | length != 1 }} received.
+  Select the one from the service you are configuring.
+</div>
+
+<div style="max-width:700px;background:#fff;border:1px solid #ddd;border-radius:4px;padding:.5rem 1rem;">
+  {% for e in unmatched %}
+  <div class="email-row">
+    <div style="flex:1;min-width:0;">
+      <div style="font-weight:600;font-size:.9rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+        {{ e.sender or '(unknown sender)' }}
+      </div>
+      <div style="font-size:.82rem;color:#555;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+        {{ e.subject or '(no subject)' }}
+      </div>
+    </div>
+    <div style="font-size:.78rem;color:#888;white-space:nowrap;">{{ e.received_at[:16] }}</div>
+    <a class="btn btn-primary"
+       href="{{ url_for('admin.wizard_step2', config_id=config.id, email_id=e.id) }}"
+       style="font-size:.82rem;padding:.3rem .7rem;white-space:nowrap;">Use this →</a>
+  </div>
+  {% endfor %}
+</div>
+
+<p style="margin-top:1rem;font-size:.85rem;color:#666;">
+  Don't see the right email?
+  <a href="{{ url_for('admin.wizard_step1', config_id=config.id) }}">Refresh</a>
+  or wait a moment — this page auto-refreshes every 15 seconds.
+</p>
+
+{% else %}
+<div class="flash info">
+  No unmatched emails yet. Forward a test OTP email to <strong>{{ noncey_address }}</strong>
+  and this page will update automatically.
+</div>
+<p style="color:#666;font-size:.85rem;">Auto-refreshing every 15 seconds…</p>
+{% endif %}
+
+<div style="margin-top:2rem;display:flex;gap:.5rem;">
+  <a class="btn" href="{{ url_for('admin.config_delete', config_id=config.id) }}">Abandon setup</a>
+</div>
+
+<meta http-equiv="refresh" content="15">
+
+{% endblock %}
