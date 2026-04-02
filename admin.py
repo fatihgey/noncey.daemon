@@ -272,8 +272,8 @@ def config_new():
         db = get_db()
         try:
             db.execute(
-                "INSERT INTO configurations (owner_id, name, version, description) "
-                "VALUES (?, ?, '-1', ?)",
+                "INSERT INTO configurations (owner_id, name, version, description, status) "
+                "VALUES (?, ?, '-1', ?, 'incomplete')",
                 (user_id, name, description)
             )
             db.commit()
@@ -750,7 +750,7 @@ def unmatched_detail(email_id):
                                            row=row, user_configs=user_configs)
                 try:
                     db.execute(
-                        "INSERT INTO configurations (owner_id, name, version) VALUES (?,?,'-1')",
+                        "INSERT INTO configurations (owner_id, name, version, status) VALUES (?,?,'-1','incomplete')",
                         (user_id, new_name)
                     )
                     config_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
@@ -1271,7 +1271,7 @@ def wizard_start():
         db = get_db()
         try:
             db.execute(
-                "INSERT INTO configurations (owner_id, name, version) VALUES (?, ?, '-1')",
+                "INSERT INTO configurations (owner_id, name, version, status) VALUES (?, ?, '-1', 'incomplete')",
                 (user_id, name)
             )
             db.commit()
