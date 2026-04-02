@@ -151,8 +151,9 @@
 {% endif %}
 
 <hr>
-<div style="display:flex;gap:.5rem;">
+<div style="display:flex;gap:.5rem;align-items:center;">
   <a class="btn" href="{{ url_for('admin.dashboard') }}">← Dashboard</a>
+  <span style="font-size:.8rem;color:#888;margin-left:.5rem;">Updated {{ config.updated_at[:16] }}</span>
 </div>
 
 {% endblock %}

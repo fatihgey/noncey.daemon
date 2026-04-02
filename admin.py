@@ -214,7 +214,10 @@ def dashboard():
     # Own private configurations
     own_configs = db.execute(
         "SELECT c.*, "
-        "  (SELECT COUNT(*) FROM providers p WHERE p.config_id=c.id) AS provider_count "
+        "  (SELECT COUNT(*) FROM providers p WHERE p.config_id=c.id) AS provider_count, "
+        "  (SELECT COUNT(*) FROM nonces n "
+        "   JOIN providers p2 ON n.provider_id=p2.id "
+        "   WHERE p2.config_id=c.id) AS nonce_count "
         "FROM configurations c "
         "WHERE c.owner_id=? AND c.visibility='private' "
         "ORDER BY c.updated_at DESC",
@@ -434,6 +437,25 @@ def config_detail(config_id):
                            activatable=activatable,
                            source_config=None,
                            has_public=has_public)
+
+
+@admin_bp.post('/configs/<int:config_id>/clear-nonces')
+@login_required
+def config_clear_nonces(config_id):
+    user_id = session['user_id']
+    config  = _get_config(config_id, user_id)
+    if not config:
+        flash('Configuration not found.', 'error')
+        return redirect(url_for('admin.dashboard'))
+
+    db = get_db()
+    db.execute(
+        "DELETE FROM nonces WHERE provider_id IN "
+        "(SELECT id FROM providers WHERE config_id=?)",
+        (config_id,)
+    )
+    db.commit()
+    return redirect(url_for('admin.dashboard'))
 
 
 # ── Provider management (config-scoped) ───────────────────────────────────────
