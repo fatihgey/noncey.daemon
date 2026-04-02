@@ -12,12 +12,8 @@
 </table>
 
 <h2>Email body</h2>
-{% if has_public %}
-<p class="hint">Body hidden — you have public configurations (privacy protection).</p>
-{% else %}
 <pre id="body-text" style="background:#f7f7f7;border:1px solid #ddd;padding:.75rem 1rem;
      overflow:auto;max-height:20rem;font-size:.82rem;white-space:pre-wrap;word-break:break-all;">{{ row.body_text or '(empty)' }}</pre>
-{% endif %}
 
 <hr>
 

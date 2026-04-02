@@ -4,7 +4,7 @@
 
 <h1>Delete configuration</h1>
 
-<p>Are you sure you want to delete <strong>{{ config.name }}</strong> v{{ config.version }}?
+<p>Are you sure you want to delete <strong>{{ config.name }}</strong>{% if config.version != '-1' %} v{{ config.version }}{% endif %}?
 This will also delete all providers and matchers belonging to it. This cannot be undone.</p>
 
 <form method="post" style="display:flex;gap:.5rem;">

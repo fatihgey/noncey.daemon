@@ -1,10 +1,10 @@
 {% extends 'admin/_base.html' %}
-{% block title %}noncey — {% if provider %}edit {{ provider.tag }}{% else %}new provider{% endif %}{% endblock %}
+{% block title %}noncey — {% if provider %}edit {{ provider.tag }}{% else %}new channel{% endif %}{% endblock %}
 {% block content %}
 
 <h1>
-  {% if provider %}Edit provider — {{ provider.tag }}
-  {% else %}New provider — {{ config.name }}
+  {% if provider %}Edit channel — {{ provider.tag }}
+  {% else %}New channel — {{ config.name }}
   {% endif %}
 </h1>
 
@@ -92,7 +92,7 @@
   </div>
 
   <input class="btn btn-primary" type="submit"
-         value="{{ 'Save changes' if provider else 'Create provider' }}">
+         value="{{ 'Save changes' if provider else 'Create channel' }}">
   <a class="btn" href="{{ url_for('admin.config_detail', config_id=config.id) }}">Cancel</a>
 </form>
 

@@ -25,7 +25,10 @@
       <td>{{ c.description or '' }}</td>
       <td class="actions">
         {% if c.id in subscribed %}
-          <span style="color:#155724;">✓ Subscribed</span>
+          <form class="inline" method="post"
+                action="{{ url_for('admin.marketplace_unsubscribe', config_id=c.id) }}">
+            <button class="btn" type="submit">Unsubscribe</button>
+          </form>
         {% elif c.owner_id == current_user.id %}
           <span style="color:#888;">Your config</span>
         {% else %}

@@ -424,19 +424,12 @@ def config_detail(config_id):
     providers, matchers = _providers_with_matchers(db, config_id)
     activatable = _config_activatable(providers, matchers)
 
-    # Check if user has public configs (hides unmatched body for privacy)
-    has_public = db.execute(
-        "SELECT COUNT(*) FROM configurations WHERE owner_id=? AND visibility='public'",
-        (user_id,)
-    ).fetchone()[0] > 0
-
     return render_template('admin/config_detail.html',
                            config=config,
                            providers=providers,
                            matchers=matchers,
                            activatable=activatable,
-                           source_config=None,
-                           has_public=has_public)
+                           source_config=None)
 
 
 @admin_bp.post('/configs/<int:config_id>/clear-nonces')
@@ -500,14 +493,17 @@ def _process_provider_form(request, config, provider, db):
                       end=end, length=length, sample=sample), None
 
 
-@admin_bp.route('/configs/<int:config_id>/providers/new', methods=['GET', 'POST'])
+@admin_bp.route('/configs/<int:config_id>/channels/new', methods=['GET', 'POST'])
 @login_required
-def provider_new(config_id):
+def channel_new(config_id):
     user_id = session['user_id']
     config  = _get_config(config_id, user_id)
     if not config:
         flash('Configuration not found.', 'error')
         return redirect(url_for('admin.dashboard'))
+    if config['visibility'] == 'public':
+        flash('Channels of a public configuration cannot be edited.', 'error')
+        return redirect(url_for('admin.config_detail', config_id=config_id))
 
     if request.method == 'POST':
         ok, fields, err = _process_provider_form(request, config, None, get_db())
@@ -527,26 +523,29 @@ def provider_new(config_id):
             )
             db.commit()
         except sqlite3.IntegrityError:
-            flash(f"Provider tag '{fields['tag']}' already exists.", 'error')
+            flash(f"Channel tag '{fields['tag']}' already exists.", 'error')
             return _render_provider_form(config, None, [], None)
 
         _auto_update_status(db, config_id)
         db.commit()
-        flash(f"Provider '{fields['tag']}' created.", 'success')
+        flash(f"Channel '{fields['tag']}' created.", 'success')
         return redirect(url_for('admin.config_detail', config_id=config_id))
 
     return _render_provider_form(config, None, [], None)
 
 
-@admin_bp.route('/configs/<int:config_id>/providers/<int:provider_id>/edit',
+@admin_bp.route('/configs/<int:config_id>/channels/<int:provider_id>/edit',
                 methods=['GET', 'POST'])
 @login_required
-def provider_edit(config_id, provider_id):
+def channel_edit(config_id, provider_id):
     user_id  = session['user_id']
     config   = _get_config(config_id, user_id)
     provider = _get_provider(provider_id, config_id, user_id)
     if not config or not provider:
         flash('Not found.', 'error')
+        return redirect(url_for('admin.config_detail', config_id=config_id))
+    if config['visibility'] == 'public':
+        flash('Channels of a public configuration cannot be edited.', 'error')
         return redirect(url_for('admin.config_detail', config_id=config_id))
 
     db       = get_db()
@@ -578,21 +577,21 @@ def provider_edit(config_id, provider_id):
             )
             db.commit()
         except sqlite3.IntegrityError:
-            flash(f"Provider tag '{fields['tag']}' already exists.", 'error')
+            flash(f"Channel tag '{fields['tag']}' already exists.", 'error')
             return _render_provider_form(config, provider, matchers, sample_sender)
 
         _auto_update_status(db, config_id)
         db.commit()
-        flash(f"Provider '{fields['tag']}' updated.", 'success')
+        flash(f"Channel '{fields['tag']}' updated.", 'success')
         return redirect(url_for('admin.config_detail', config_id=config_id))
 
     return _render_provider_form(config, provider, matchers, sample_sender)
 
 
-@admin_bp.route('/configs/<int:config_id>/providers/<int:provider_id>/delete',
+@admin_bp.route('/configs/<int:config_id>/channels/<int:provider_id>/delete',
                 methods=['GET', 'POST'])
 @login_required
-def provider_delete(config_id, provider_id):
+def channel_delete(config_id, provider_id):
     user_id  = session['user_id']
     config   = _get_config(config_id, user_id)
     provider = _get_provider(provider_id, config_id, user_id)
@@ -615,12 +614,12 @@ def provider_delete(config_id, provider_id):
         if remaining == 0 and cfg_row and cfg_row['prompt'] is None:
             db.execute("DELETE FROM configurations WHERE id=?", (config_id,))
             db.commit()
-            flash(f"Provider '{provider['tag']}' deleted. "
+            flash(f"Channel '{provider['tag']}' deleted. "
                   "Configuration had no remaining elements and was removed.", 'success')
             return redirect(url_for('admin.dashboard'))
 
         db.commit()
-        flash(f"Provider '{provider['tag']}' deleted.", 'success')
+        flash(f"Channel '{provider['tag']}' deleted.", 'success')
         return redirect(url_for('admin.config_detail', config_id=config_id))
 
     return render_template('admin/provider_delete.html', config=config, provider=provider)
@@ -628,13 +627,13 @@ def provider_delete(config_id, provider_id):
 
 # ── Matcher management ────────────────────────────────────────────────────────
 
-@admin_bp.post('/configs/<int:config_id>/providers/<int:provider_id>/matchers/new')
+@admin_bp.post('/configs/<int:config_id>/channels/<int:provider_id>/matchers/new')
 @login_required
 def matcher_new(config_id, provider_id):
     user_id  = session['user_id']
     provider = _get_provider(provider_id, config_id, user_id)
     if not provider:
-        flash('Provider not found.', 'error')
+        flash('Channel not found.', 'error')
         return redirect(url_for('admin.config_detail', config_id=config_id))
 
     sender_mode = request.form.get('sender_mode', 'any')
@@ -664,7 +663,7 @@ def matcher_new(config_id, provider_id):
 
     if not sender and not subject:
         flash('At least one of sender or subject must be specified.', 'error')
-        return redirect(url_for('admin.provider_edit',
+        return redirect(url_for('admin.channel_edit',
                                 config_id=config_id, provider_id=provider_id))
 
     db = get_db()
@@ -676,11 +675,11 @@ def matcher_new(config_id, provider_id):
     _auto_update_status(db, config_id)
     db.commit()
     flash('Matcher added.', 'success')
-    return redirect(url_for('admin.provider_edit',
+    return redirect(url_for('admin.channel_edit',
                             config_id=config_id, provider_id=provider_id))
 
 
-@admin_bp.post('/configs/<int:config_id>/providers/<int:provider_id>'
+@admin_bp.post('/configs/<int:config_id>/channels/<int:provider_id>'
                '/matchers/<int:matcher_id>/delete')
 @login_required
 def matcher_delete(config_id, provider_id, matcher_id):
@@ -693,7 +692,7 @@ def matcher_delete(config_id, provider_id, matcher_id):
         _auto_update_status(db, config_id)
     db.commit()
     flash('Matcher removed.' if cur.rowcount else 'Matcher not found.', 'success')
-    return redirect(url_for('admin.provider_edit',
+    return redirect(url_for('admin.channel_edit',
                             config_id=config_id, provider_id=provider_id))
 
 
@@ -726,12 +725,6 @@ def unmatched_detail(email_id):
         flash('Not found.', 'error')
         return redirect(url_for('admin.unmatched_list'))
 
-    # Privacy: if user has public configs, hide email body
-    has_public = db.execute(
-        "SELECT COUNT(*) FROM configurations WHERE owner_id=? AND visibility='public'",
-        (user_id,)
-    ).fetchone()[0] > 0
-
     # User's private configurations for the target config selector.
     # COALESCE handles the edge case where visibility is NULL (migration gap).
     # Includes valid_tested — adding a channel is allowed and resets it to valid.
@@ -754,8 +747,7 @@ def unmatched_detail(email_id):
                 if not new_name:
                     flash('Configuration name is required.', 'error')
                     return render_template('admin/unmatched_detail.html',
-                                           row=row, user_configs=user_configs,
-                                           has_public=has_public)
+                                           row=row, user_configs=user_configs)
                 try:
                     db.execute(
                         "INSERT INTO configurations (owner_id, name, version) VALUES (?,?,'-1')",
@@ -765,20 +757,17 @@ def unmatched_detail(email_id):
                 except sqlite3.IntegrityError:
                     flash(f"A configuration named '{new_name}' already exists.", 'error')
                     return render_template('admin/unmatched_detail.html',
-                                           row=row, user_configs=user_configs,
-                                           has_public=has_public)
+                                           row=row, user_configs=user_configs)
             elif config_choice:
                 config_id = int(config_choice)
                 if not _get_config(config_id, user_id):
                     flash('Configuration not found.', 'error')
                     return render_template('admin/unmatched_detail.html',
-                                           row=row, user_configs=user_configs,
-                                           has_public=has_public)
+                                           row=row, user_configs=user_configs)
             else:
                 flash('Select or create a target configuration.', 'error')
                 return render_template('admin/unmatched_detail.html',
-                                       row=row, user_configs=user_configs,
-                                       has_public=has_public)
+                                       row=row, user_configs=user_configs)
 
             # ── Extraction settings ───────────────────────────────────────────
             tag    = request.form.get('tag', '').strip()
@@ -795,15 +784,13 @@ def unmatched_detail(email_id):
                 if not example_otp:
                     flash('Example OTP is required for auto extraction mode.', 'error')
                     return render_template('admin/unmatched_detail.html',
-                                           row=row, user_configs=user_configs,
-                                           has_public=has_public)
+                                           row=row, user_configs=user_configs)
                 derive_from = row['subject'] if source == 'subject' else (row['body_text'] or '')
                 start, length = _derive_auto_markers(derive_from, example_otp)
                 if not start:
                     flash('Example OTP not found in the email text.', 'error')
                     return render_template('admin/unmatched_detail.html',
-                                           row=row, user_configs=user_configs,
-                                           has_public=has_public)
+                                           row=row, user_configs=user_configs)
             else:
                 start = request.form.get('nonce_start_marker', '').strip()
 
@@ -831,13 +818,11 @@ def unmatched_detail(email_id):
             if not tag:
                 flash('Tag is required.', 'error')
                 return render_template('admin/unmatched_detail.html',
-                                       row=row, user_configs=user_configs,
-                                       has_public=has_public)
+                                       row=row, user_configs=user_configs)
             if mode != 'auto' and not start:
                 flash('Start marker is required for this extraction mode.', 'error')
                 return render_template('admin/unmatched_detail.html',
-                                       row=row, user_configs=user_configs,
-                                       has_public=has_public)
+                                       row=row, user_configs=user_configs)
 
             try:
                 db.execute(
@@ -859,15 +844,13 @@ def unmatched_detail(email_id):
             except sqlite3.IntegrityError:
                 flash(f"Channel name '{tag}' already exists.", 'error')
                 return render_template('admin/unmatched_detail.html',
-                                       row=row, user_configs=user_configs,
-                                       has_public=has_public)
+                                       row=row, user_configs=user_configs)
 
             flash(f"Channel '{tag}' created.", 'success')
             return redirect(url_for('admin.config_detail', config_id=config_id))
 
     return render_template('admin/unmatched_detail.html',
-                           row=row, user_configs=user_configs,
-                           has_public=has_public)
+                           row=row, user_configs=user_configs)
 
 
 @admin_bp.post('/unmatched/<int:email_id>/dismiss')
@@ -938,6 +921,23 @@ def marketplace_subscribe(src_config_id):
     db.commit()
     flash(f"Subscribed to '{src['name']}' {src['version']}.", 'success')
     return redirect(url_for('admin.dashboard'))
+
+
+@admin_bp.post('/marketplace/<int:config_id>/unsubscribe')
+@login_required
+def marketplace_unsubscribe(config_id):
+    user_id = session['user_id']
+    db      = get_db()
+    cur = db.execute(
+        "DELETE FROM subscriptions WHERE user_id=? AND config_id=?",
+        (user_id, config_id)
+    )
+    db.commit()
+    if cur.rowcount:
+        flash('Unsubscribed.', 'success')
+    else:
+        flash('Subscription not found.', 'error')
+    return redirect(url_for('admin.marketplace_browse'))
 
 
 @admin_bp.post('/marketplace/<int:old_config_id>/update/<int:new_config_id>')
@@ -1337,11 +1337,6 @@ def wizard_step2(config_id, email_id):
         flash('Email not found. It may have already been used.', 'error')
         return redirect(url_for('admin.wizard_step1', config_id=config_id))
 
-    has_public = db.execute(
-        "SELECT COUNT(*) FROM configurations WHERE owner_id=? AND visibility='public'",
-        (user_id,)
-    ).fetchone()[0] > 0
-
     if request.method == 'POST':
         tag    = request.form.get('tag', '').strip()
         mode   = request.form.get('extract_mode', 'auto')
@@ -1357,13 +1352,13 @@ def wizard_step2(config_id, email_id):
             if not example_otp:
                 flash('Example OTP is required for auto extraction mode.', 'error')
                 return render_template('admin/wizard_step2.html',
-                                       config=config, email=email, has_public=has_public)
+                                       config=config, email=email)
             derive_from = email['subject'] if source == 'subject' else (email['body_text'] or '')
             start, length = _derive_auto_markers(derive_from, example_otp)
             if not start:
                 flash('Example OTP not found in the email text.', 'error')
                 return render_template('admin/wizard_step2.html',
-                                       config=config, email=email, has_public=has_public)
+                                       config=config, email=email)
         else:
             start = request.form.get('nonce_start_marker', '').strip()
 
@@ -1389,11 +1384,11 @@ def wizard_step2(config_id, email_id):
         if not tag:
             flash('Channel name is required.', 'error')
             return render_template('admin/wizard_step2.html',
-                                   config=config, email=email, has_public=has_public)
+                                   config=config, email=email)
         if mode != 'auto' and not start:
             flash('Start marker is required for this extraction mode.', 'error')
             return render_template('admin/wizard_step2.html',
-                                   config=config, email=email, has_public=has_public)
+                                   config=config, email=email)
 
         try:
             db.execute(
@@ -1415,12 +1410,12 @@ def wizard_step2(config_id, email_id):
         except sqlite3.IntegrityError:
             flash(f"Channel name '{tag}' already exists.", 'error')
             return render_template('admin/wizard_step2.html',
-                                   config=config, email=email, has_public=has_public)
+                                   config=config, email=email)
 
         return redirect(url_for('admin.wizard_step3', config_id=config_id))
 
     return render_template('admin/wizard_step2.html',
-                           config=config, email=email, has_public=has_public)
+                           config=config, email=email)
 
 
 @admin_bp.get('/wizard/<int:config_id>/3')

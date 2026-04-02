@@ -39,8 +39,8 @@
         {% endif %}
       </td>
       <td class="actions">
-        <a class="btn" href="{{ url_for('admin.provider_edit', user_id=user.id, provider_id=p.id) }}">Edit</a>
-        <a class="btn btn-danger" href="{{ url_for('admin.provider_delete', user_id=user.id, provider_id=p.id) }}">Delete</a>
+        <a class="btn" href="{{ url_for('admin.channel_edit', user_id=user.id, provider_id=p.id) }}">Edit</a>
+        <a class="btn btn-danger" href="{{ url_for('admin.channel_delete', user_id=user.id, provider_id=p.id) }}">Delete</a>
       </td>
     </tr>
     {% endfor %}
@@ -50,7 +50,7 @@
 <p class="empty">No providers configured for this user.</p>
 {% endif %}
 
-<a class="btn btn-primary" href="{{ url_for('admin.provider_new', user_id=user.id) }}">+ New provider</a>
+<a class="btn btn-primary" href="{{ url_for('admin.channel_new', user_id=user.id) }}">+ New channel</a>
 <a class="btn" href="{{ url_for('admin.dashboard') }}">← Back</a>
 
 {% endblock %}

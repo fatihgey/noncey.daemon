@@ -100,7 +100,7 @@
 <div style="display:flex;align-items:center;gap:1rem;margin-bottom:.75rem;">
   <h2 style="margin:0;">Channels</h2>
   {% if config.visibility == 'private' and config.status in ('incomplete', 'valid') %}
-  <a class="btn" href="{{ url_for('admin.provider_new', config_id=config.id) }}">+ Add channel</a>
+  <a class="btn" href="{{ url_for('admin.channel_new', config_id=config.id) }}">+ Add channel</a>
   {% endif %}
 </div>
 
@@ -130,10 +130,12 @@
         {% endif %}
       </td>
       <td class="actions">
-        <a class="btn" href="{{ url_for('admin.provider_edit', config_id=config.id, provider_id=p.id) }}">Edit</a>
+        {% if config.visibility == 'private' %}
+        <a class="btn" href="{{ url_for('admin.channel_edit', config_id=config.id, provider_id=p.id) }}">Edit</a>
+        {% endif %}
         {% if config.visibility == 'private' and config.status in ('incomplete', 'valid') %}
         <a class="btn btn-danger"
-           href="{{ url_for('admin.provider_delete', config_id=config.id, provider_id=p.id) }}">Delete</a>
+           href="{{ url_for('admin.channel_delete', config_id=config.id, provider_id=p.id) }}">Delete</a>
         {% endif %}
       </td>
     </tr>
@@ -143,7 +145,7 @@
 {% else %}
 <p class="empty">
   No channels yet.
-  {% if config.visibility == 'private' %}<a href="{{ url_for('admin.provider_new', config_id=config.id) }}">Add one.</a>{% endif %}
+  {% if config.visibility == 'private' %}<a href="{{ url_for('admin.channel_new', config_id=config.id) }}">Add one.</a>{% endif %}
 </p>
 {% endif %}
 
