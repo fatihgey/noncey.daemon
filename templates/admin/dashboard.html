@@ -87,13 +87,29 @@ document.querySelectorAll('.sub-toggle').forEach(function(btn) {
 
     fetch(url, { method: 'POST' }).then(function(r) {
       if (r.ok || r.redirected) {
+        var openBtn = row.querySelector('a.btn');
+        var dataCells = row.querySelectorAll('td:not(:last-child)');
         if (subscribed) {
-          row.style.textDecoration = 'line-through';
-          row.style.opacity = '.4';
+          dataCells.forEach(function(td) {
+            td.style.textDecoration = 'line-through';
+            td.style.opacity = '.4';
+          });
+          if (openBtn) {
+            openBtn.style.opacity = '.4';
+            openBtn.style.pointerEvents = 'none';
+            openBtn.style.cursor = 'default';
+          }
           btn.textContent = 'Subscribe';
         } else {
-          row.style.textDecoration = '';
-          row.style.opacity = '';
+          dataCells.forEach(function(td) {
+            td.style.textDecoration = '';
+            td.style.opacity = '';
+          });
+          if (openBtn) {
+            openBtn.style.opacity = '';
+            openBtn.style.pointerEvents = '';
+            openBtn.style.cursor = '';
+          }
           btn.textContent = 'Unsubscribe';
         }
       }
