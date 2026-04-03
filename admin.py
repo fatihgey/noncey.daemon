@@ -927,9 +927,21 @@ def marketplace_browse():
         ).fetchall()
     )
 
+    sub_data = {}
+    if _is_admin(user_id):
+        for c in configs:
+            rows = db.execute(
+                "SELECT u.username FROM subscriptions s "
+                "JOIN users u ON u.id = s.user_id "
+                "WHERE s.config_id=?",
+                (c['id'],)
+            ).fetchall()
+            sub_data[c['id']] = [r['username'] for r in rows]
+
     return render_template('admin/marketplace.html',
                            configs=configs,
-                           subscribed=subscribed)
+                           subscribed=subscribed,
+                           sub_data=sub_data)
 
 
 @admin_bp.post('/marketplace/<int:src_config_id>/subscribe')

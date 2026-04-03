@@ -13,6 +13,7 @@
       <th>Version</th>
       <th>Owner</th>
       <th>Description</th>
+      {% if user_is_admin %}<th>Subscribers</th>{% endif %}
       <th>Actions</th>
     </tr>
   </thead>
@@ -24,6 +25,15 @@
       <td>{{ c.version }}</td>
       <td>{{ c.owner_name }}</td>
       <td>{{ c.description or '' }}</td>
+      {% if user_is_admin %}
+      <td>
+        {% set subs = sub_data.get(c.id, []) %}
+        {{ subs | length }}
+        {% if subs | length > 0 and subs | length < 3 %}
+          — {{ subs | join(', ') }}
+        {% endif %}
+      </td>
+      {% endif %}
       <td class="actions" onclick="event.stopPropagation()">
         {% if c.id in subscribed %}
           <form class="inline" method="post"
