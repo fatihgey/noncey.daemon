@@ -146,7 +146,7 @@ def login():
     user = db.execute(
         "SELECT id, password_hash FROM users WHERE username = ?", (username,)
     ).fetchone()
-    dummy_hash = '$2b$12$aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+    dummy_hash = '$2b$12$aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
     stored     = user['password_hash'] if user else dummy_hash
     ok         = bcrypt.checkpw(password.encode(), stored.encode())
     if not user or not ok:
