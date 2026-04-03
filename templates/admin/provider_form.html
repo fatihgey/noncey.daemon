@@ -8,7 +8,7 @@
   {% endif %}
 </h1>
 
-<form method="post" style="max-width: 600px;">
+<form method="post" style="max-width: 600px;" {% if config.visibility == 'public' %}onsubmit="return false;"{% endif %}>
   <div class="field">
     <label for="tag">Tag</label>
     <input type="text" id="tag" name="tag"
@@ -91,21 +91,25 @@
     <p class="hint">Paste a representative email for reference and sender detection.</p>
   </div>
 
+  {% if config.visibility == 'private' %}
   <input class="btn btn-primary" type="submit"
          value="{{ 'Save changes' if provider else 'Create channel' }}">
   <a class="btn" href="{{ url_for('admin.config_detail', config_id=config.id) }}">Cancel</a>
+  {% else %}
+  <a class="btn" href="{{ url_for('admin.config_detail', config_id=config.id) }}">← Back</a>
+  {% endif %}
 </form>
 
-{# Matchers section — only shown when editing an existing provider #}
+{# Headers section — only shown when editing an existing provider #}
 {% if provider %}
 <hr>
 
-<h2>Matchers</h2>
+<h2>Headers</h2>
 <p class="hint">
-  An inbound email matches this provider if <em>any one</em> matcher fires.
-  A matcher fires when every condition it defines is satisfied
+  An inbound email matches this provider if <em>any one</em> header fires.
+  A header fires when every condition it defines is satisfied
   (sender AND subject pattern, if both are set).
-  A provider with no matchers will never capture nonces.
+  A provider with no headers will never capture nonces.
 </p>
 
 {% if matchers %}
@@ -123,6 +127,7 @@
       <td>{{ m.sender_email or '' }}<span class="hint">{{ '(any)' if not m.sender_email }}</span></td>
       <td>{{ m.subject_pattern or '' }}<span class="hint">{{ '(any)' if not m.subject_pattern }}</span></td>
       <td>
+        {% if config.visibility == 'private' %}
         <form class="inline" method="post"
               action="{{ url_for('admin.matcher_delete',
                                  config_id=config.id,
@@ -130,16 +135,18 @@
                                  matcher_id=m.id) }}">
           <button class="btn btn-danger" type="submit">Remove</button>
         </form>
+        {% endif %}
       </td>
     </tr>
     {% endfor %}
   </tbody>
 </table>
 {% else %}
-<p class="empty">No matchers yet.</p>
+<p class="empty">No headers yet.</p>
 {% endif %}
 
-<h3>Add matcher</h3>
+{% if config.visibility == 'private' %}
+<h3>Add header</h3>
 <form method="post" style="max-width: 600px;"
       action="{{ url_for('admin.matcher_new', config_id=config.id, provider_id=provider.id) }}">
 
@@ -188,8 +195,9 @@
     <p class="hint">Regex examples: <code>verify</code> · <code>code|otp</code> · <code>^\[GitHub\]</code></p>
   </div>
 
-  <input class="btn btn-primary" type="submit" value="Add matcher">
+  <input class="btn btn-primary" type="submit" value="Add header">
 </form>
+{% endif %}{# end if private #}
 
 {% endif %}{# end if provider #}
 

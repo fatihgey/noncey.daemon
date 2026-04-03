@@ -24,6 +24,7 @@
       <td>{{ c.owner_name }}</td>
       <td>{{ c.description or '' }}</td>
       <td class="actions">
+        <a class="btn" href="{{ url_for('admin.config_detail', config_id=c.id) }}">Open</a>
         {% if c.id in subscribed %}
           <form class="inline" method="post"
                 action="{{ url_for('admin.marketplace_unsubscribe', config_id=c.id) }}">
@@ -34,6 +35,9 @@
                 action="{{ url_for('admin.marketplace_subscribe', src_config_id=c.id) }}">
             <button class="btn btn-primary" type="submit">Subscribe</button>
           </form>
+        {% endif %}
+        {% if user_is_admin %}
+          <a class="btn btn-danger" href="{{ url_for('admin.config_delete', config_id=c.id) }}">Delete</a>
         {% endif %}
       </td>
     </tr>

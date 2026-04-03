@@ -97,6 +97,22 @@ def _get_provider(provider_id: int, config_id: int, user_id: int):
     ).fetchone()
 
 
+def _get_any_public_config(config_id: int):
+    return get_db().execute(
+        "SELECT * FROM configurations WHERE id=? AND visibility='public'",
+        (config_id,)
+    ).fetchone()
+
+
+def _get_public_provider(provider_id: int, config_id: int):
+    return get_db().execute(
+        "SELECT p.* FROM providers p "
+        "JOIN configurations c ON c.id = p.config_id "
+        "WHERE p.id=? AND p.config_id=? AND c.visibility='public'",
+        (provider_id, config_id)
+    ).fetchone()
+
+
 def _derive_auto_markers(text: str, example_otp: str):
     if not example_otp or not text:
         return '', None
@@ -335,11 +351,13 @@ def config_edit(config_id):
 def config_delete(config_id):
     user_id = session['user_id']
     config  = _get_config(config_id, user_id)
+    if not config and _is_admin(user_id):
+        config = _get_any_public_config(config_id)
     if not config:
         flash('Configuration not found.', 'error')
         return redirect(url_for('admin.dashboard'))
 
-    if config['visibility'] == 'public':
+    if config['visibility'] == 'public' and not _is_admin(user_id):
         flash('Public configurations can only be deleted by an administrator.', 'error')
         return redirect(url_for('admin.config_detail', config_id=config_id))
 
@@ -418,7 +436,7 @@ def config_submit(config_id):
 @login_required
 def config_detail(config_id):
     user_id = session['user_id']
-    config  = _get_config(config_id, user_id)
+    config  = _get_config(config_id, user_id) or _get_any_public_config(config_id)
     if not config:
         flash('Configuration not found.', 'error')
         return redirect(url_for('admin.dashboard'))
@@ -542,13 +560,10 @@ def channel_new(config_id):
 @login_required
 def channel_edit(config_id, provider_id):
     user_id  = session['user_id']
-    config   = _get_config(config_id, user_id)
-    provider = _get_provider(provider_id, config_id, user_id)
+    config   = _get_config(config_id, user_id) or _get_any_public_config(config_id)
+    provider = _get_provider(provider_id, config_id, user_id) or _get_public_provider(provider_id, config_id)
     if not config or not provider:
         flash('Not found.', 'error')
-        return redirect(url_for('admin.config_detail', config_id=config_id))
-    if config['visibility'] == 'public':
-        flash('Channels of a public configuration cannot be edited.', 'error')
         return redirect(url_for('admin.config_detail', config_id=config_id))
 
     db       = get_db()
@@ -562,6 +577,10 @@ def channel_edit(config_id, provider_id):
         if m:
             _, addr = parseaddr(m.group(1).strip())
             sample_sender = addr.lower() if addr else None
+
+    if request.method == 'POST' and config['visibility'] == 'public':
+        flash('Channels of a public configuration cannot be edited.', 'error')
+        return redirect(url_for('admin.config_detail', config_id=config_id))
 
     if request.method == 'POST':
         ok, fields, err = _process_provider_form(request, config, provider, db)

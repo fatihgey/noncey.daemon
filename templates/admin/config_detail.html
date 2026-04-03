@@ -61,10 +61,7 @@
 
 {% else %}{# public config — read-only #}
 <div style="margin-bottom:1.5rem;">
-  <span style="color:#0c5460;font-size:.875rem;">
-    Published in marketplace — read-only.
-    {% if config.owner_id == current_user.id %}<a href="{{ url_for('admin.admin_marketplace') }}">Admin view</a>{% endif %}
-  </span>
+  <span style="color:#0c5460;font-size:.875rem;">Published in marketplace — read-only.</span>
 </div>
 {% endif %}
 
@@ -117,7 +114,8 @@
   </thead>
   <tbody>
     {% for p in providers %}
-    <tr>
+    {% set channel_url = url_for('admin.channel_edit', config_id=config.id, provider_id=p.id) %}
+    <tr {% if config.visibility == 'public' %}style="cursor:pointer;" onclick="location.href='{{ channel_url }}'"{% endif %}>
       <td><strong>{{ p.tag }}</strong></td>
       <td>{{ p.extract_source }}</td>
       <td>{{ p.extract_mode }}</td>
@@ -131,7 +129,7 @@
       </td>
       <td class="actions">
         {% if config.visibility == 'private' %}
-        <a class="btn" href="{{ url_for('admin.channel_edit', config_id=config.id, provider_id=p.id) }}">Edit</a>
+        <a class="btn" href="{{ channel_url }}">Edit</a>
         {% endif %}
         {% if config.visibility == 'private' and config.status in ('incomplete', 'valid') %}
         <a class="btn btn-danger"
@@ -157,7 +155,7 @@
 
 <hr>
 <div style="display:flex;gap:.5rem;align-items:center;">
-  <a class="btn" href="{{ url_for('admin.dashboard') }}">← Dashboard</a>
+  <a class="btn" href="{{ url_for('admin.dashboard') }}">← Back</a>
   <span style="font-size:.8rem;color:#888;margin-left:.5rem;">Updated {{ config.updated_at[:16] }}</span>
 </div>
 
