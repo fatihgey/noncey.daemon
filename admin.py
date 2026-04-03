@@ -555,15 +555,37 @@ def channel_new(config_id):
     return _render_provider_form(config, None, [], None)
 
 
+@admin_bp.get('/configs/<int:config_id>/channels/<int:provider_id>')
+@login_required
+def channel_view(config_id, provider_id):
+    user_id  = session['user_id']
+    config   = _get_any_public_config(config_id)
+    provider = _get_public_provider(provider_id, config_id)
+    if not config or not provider:
+        flash('Not found.', 'error')
+        return redirect(url_for('admin.dashboard'))
+
+    db       = get_db()
+    matchers = db.execute(
+        "SELECT * FROM provider_matchers WHERE provider_id=?", (provider_id,)
+    ).fetchall()
+
+    return render_template('admin/provider_view.html',
+                           config=config, provider=provider, matchers=matchers)
+
+
 @admin_bp.route('/configs/<int:config_id>/channels/<int:provider_id>/edit',
                 methods=['GET', 'POST'])
 @login_required
 def channel_edit(config_id, provider_id):
     user_id  = session['user_id']
-    config   = _get_config(config_id, user_id) or _get_any_public_config(config_id)
-    provider = _get_provider(provider_id, config_id, user_id) or _get_public_provider(provider_id, config_id)
+    config   = _get_config(config_id, user_id)
+    provider = _get_provider(provider_id, config_id, user_id)
     if not config or not provider:
         flash('Not found.', 'error')
+        return redirect(url_for('admin.config_detail', config_id=config_id))
+    if config['visibility'] == 'public':
+        flash('Channels of a public configuration cannot be edited.', 'error')
         return redirect(url_for('admin.config_detail', config_id=config_id))
 
     db       = get_db()
@@ -577,10 +599,6 @@ def channel_edit(config_id, provider_id):
         if m:
             _, addr = parseaddr(m.group(1).strip())
             sample_sender = addr.lower() if addr else None
-
-    if request.method == 'POST' and config['visibility'] == 'public':
-        flash('Channels of a public configuration cannot be edited.', 'error')
-        return redirect(url_for('admin.config_detail', config_id=config_id))
 
     if request.method == 'POST':
         ok, fields, err = _process_provider_form(request, config, provider, db)

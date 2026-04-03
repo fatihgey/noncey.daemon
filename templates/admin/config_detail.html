@@ -114,7 +114,11 @@
   </thead>
   <tbody>
     {% for p in providers %}
-    {% set channel_url = url_for('admin.channel_edit', config_id=config.id, provider_id=p.id) %}
+    {% if config.visibility == 'public' %}
+      {% set channel_url = url_for('admin.channel_view', config_id=config.id, provider_id=p.id) %}
+    {% else %}
+      {% set channel_url = url_for('admin.channel_edit', config_id=config.id, provider_id=p.id) %}
+    {% endif %}
     <tr {% if config.visibility == 'public' %}style="cursor:pointer;" onclick="location.href='{{ channel_url }}'"{% endif %}>
       <td><strong>{{ p.tag }}</strong></td>
       <td>{{ p.extract_source }}</td>
