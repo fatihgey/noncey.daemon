@@ -18,13 +18,13 @@
   </thead>
   <tbody>
     {% for c in configs %}
-    <tr>
+    <tr style="cursor:pointer;"
+        onclick="location.href='{{ url_for('admin.config_detail', config_id=c.id) }}'">
       <td><strong>{{ c.name }}</strong></td>
       <td>{{ c.version }}</td>
       <td>{{ c.owner_name }}</td>
       <td>{{ c.description or '' }}</td>
-      <td class="actions">
-        <a class="btn" href="{{ url_for('admin.config_detail', config_id=c.id) }}">Open</a>
+      <td class="actions" onclick="event.stopPropagation()">
         {% if c.id in subscribed %}
           <form class="inline" method="post"
                 action="{{ url_for('admin.marketplace_unsubscribe', config_id=c.id) }}">
