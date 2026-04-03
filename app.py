@@ -43,6 +43,10 @@ app.secret_key = cfg('general', 'secret_key')   # also used for Flask session / 
 app.permanent_session_lifetime = timedelta(days=30)
 app.register_blueprint(admin_bp)
 
+# Pre-computed dummy hash for timing-safe login (bcrypt 4.x requires a valid hash).
+# rounds=4 keeps startup fast; the value is never used to authenticate anyone.
+_DUMMY_HASH = bcrypt.hashpw(b'noncey-timing-dummy', bcrypt.gensalt(rounds=4)).decode()
+
 # Jinja2 helper: {{ some_json_text | fromjson }}
 app.jinja_env.filters['fromjson'] = json.loads
 
@@ -146,8 +150,7 @@ def login():
     user = db.execute(
         "SELECT id, password_hash FROM users WHERE username = ?", (username,)
     ).fetchone()
-    dummy_hash = '$2b$12$aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
-    stored     = user['password_hash'] if user else dummy_hash
+    stored     = user['password_hash'] if user else _DUMMY_HASH
     ok         = bcrypt.checkpw(password.encode(), stored.encode())
     if not user or not ok:
         return jsonify({'error': 'Invalid credentials'}), 401
