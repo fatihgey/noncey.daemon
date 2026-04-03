@@ -119,7 +119,7 @@
     {% else %}
       {% set channel_url = url_for('admin.channel_edit', config_id=config.id, provider_id=p.id) %}
     {% endif %}
-    <tr {% if config.visibility == 'public' %}style="cursor:pointer;" onclick="location.href='{{ channel_url }}'"{% endif %}>
+    <tr style="cursor:pointer;" onclick="location.href='{{ channel_url }}'">
       <td><strong>{{ p.tag }}</strong></td>
       <td>{{ p.extract_source }}</td>
       <td>{{ p.extract_mode }}</td>
@@ -132,12 +132,10 @@
         {% endif %}
       </td>
       <td class="actions">
-        {% if config.visibility == 'private' %}
-        <a class="btn" href="{{ channel_url }}">Edit</a>
-        {% endif %}
         {% if config.visibility == 'private' and config.status in ('incomplete', 'valid') %}
         <a class="btn btn-danger"
-           href="{{ url_for('admin.channel_delete', config_id=config.id, provider_id=p.id) }}">Delete</a>
+           href="{{ url_for('admin.channel_delete', config_id=config.id, provider_id=p.id) }}"
+           onclick="event.stopPropagation()">Delete</a>
         {% endif %}
       </td>
     </tr>
