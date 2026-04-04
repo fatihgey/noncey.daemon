@@ -492,7 +492,7 @@ def sms_ingest():
             (config_id, g.user_id, g.user_id)
         ).fetchone()
     else:
-        provider = match_sms_provider(db_conn, g.user_id, sender)
+        provider = match_sms_provider(db_conn, g.user_id, sender, body)
 
     # ── Archive ───────────────────────────────────────────────────────────────
     username = db_conn.execute(

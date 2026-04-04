@@ -133,8 +133,8 @@
 <h2>Headers</h2>
 {% if is_sms %}
 <p class="hint">
-  An inbound SMS matches this provider when its sender phone number matches
-  any of the entries below. A provider with no headers will never capture nonces.
+  An inbound SMS matches this provider when its sender phone (required) and
+  optional body pattern both match. A provider with no headers will never capture nonces.
 </p>
 {% else %}
 <p class="hint">
@@ -151,6 +151,7 @@
     <tr>
       {% if is_sms %}
       <th>Sender phone</th>
+      <th>Body pattern</th>
       {% else %}
       <th>Sender email</th>
       <th>Subject pattern&nbsp;<small>(regex)</small></th>
@@ -163,6 +164,14 @@
     <tr>
       {% if is_sms %}
       <td>{{ m.sender_phone or '' }}<span class="hint">{{ '(any)' if not m.sender_phone }}</span></td>
+      <td>
+        {% if m.body_pattern %}
+          <code>{{ m.body_pattern }}</code>
+          <span class="hint">({{ m.body_match_type }})</span>
+        {% else %}
+          <span class="hint">(any)</span>
+        {% endif %}
+      </td>
       {% else %}
       <td>{{ m.sender_email or '' }}<span class="hint">{{ '(any)' if not m.sender_email }}</span></td>
       <td>{{ m.subject_pattern or '' }}<span class="hint">{{ '(any)' if not m.subject_pattern }}</span></td>
@@ -205,6 +214,30 @@
       <input type="text" name="sender_custom" id="sender-custom-input"
              placeholder="+491234567890" autocomplete="off" spellcheck="false"
              style="width:auto;flex:1;" onfocus="document.getElementById('sender-custom-radio').checked=true">
+    </label>
+  </div>
+
+  {# ── SMS: body pattern (optional) ── #}
+  <div class="field">
+    <label>Body pattern <span style="font-weight:normal;color:#666;">(optional)</span></label>
+    <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;margin-bottom:.35rem;">
+      <input type="radio" name="body_mode" value="any" id="body-any-radio" checked>
+      Any body
+    </label>
+    <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;margin-bottom:.35rem;">
+      <input type="radio" name="body_mode" value="starts_with" id="body-starts-radio">
+      Begins with:
+      <input type="text" name="body_text" id="body-text-input"
+             placeholder="Your OTP is" autocomplete="off" spellcheck="false"
+             style="width:auto;flex:1;" onfocus="document.getElementById('body-starts-radio').checked=true">
+    </label>
+    <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;margin-bottom:.35rem;">
+      <input type="radio" name="body_mode" value="regex" id="body-regex-radio">
+      Regex:
+      <input type="text" name="body_regex" id="body-regex-input"
+             placeholder="^Your\s+OTP" autocomplete="off" spellcheck="false"
+             style="width:auto;flex:1;font-family:monospace;"
+             onfocus="document.getElementById('body-regex-radio').checked=true">
     </label>
   </div>
 

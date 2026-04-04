@@ -687,7 +687,7 @@ def matcher_new(config_id, provider_id):
     db = get_db()
 
     if provider['channel_type'] == 'sms':
-        # SMS channel: only sender phone matters
+        # SMS channel: sender phone + optional body pattern
         sender_mode = request.form.get('sender_mode', 'sample')
         if sender_mode == 'sample':
             phone = provider['sample_email'] or ''   # sample_email reused as sample_body
@@ -700,9 +700,23 @@ def matcher_new(config_id, provider_id):
             flash('Sender phone number is required for an SMS matcher.', 'error')
             return redirect(url_for('admin.channel_edit',
                                     config_id=config_id, provider_id=provider_id))
+
+        body_mode = request.form.get('body_mode', 'any')
+        if body_mode == 'starts_with':
+            body_pattern    = request.form.get('body_text', '').strip() or None
+            body_match_type = 'starts_with' if body_pattern else None
+        elif body_mode == 'regex':
+            body_pattern    = request.form.get('body_regex', '').strip() or None
+            body_match_type = 'regex' if body_pattern else None
+        else:
+            body_pattern    = None
+            body_match_type = None
+
         db.execute(
-            "INSERT INTO provider_matchers (provider_id, sender_phone) VALUES (?, ?)",
-            (provider_id, phone)
+            "INSERT INTO provider_matchers "
+            "  (provider_id, sender_phone, body_pattern, body_match_type) "
+            "VALUES (?, ?, ?, ?)",
+            (provider_id, phone, body_pattern, body_match_type)
         )
     else:
         # Email channel
@@ -877,6 +891,17 @@ def unmatched_detail(email_id):
                     sender_phone = None
                 sender_email    = None
                 subject_pattern = None
+                # ── SMS body pattern ──────────────────────────────────────────
+                body_mode = request.form.get('body_mode', 'any')
+                if body_mode == 'starts_with':
+                    body_pattern    = request.form.get('body_text', '').strip() or None
+                    body_match_type = 'starts_with' if body_pattern else None
+                elif body_mode == 'regex':
+                    body_pattern    = request.form.get('body_regex', '').strip() or None
+                    body_match_type = 'regex' if body_pattern else None
+                else:
+                    body_pattern    = None
+                    body_match_type = None
             else:
                 # ── Email sender ──────────────────────────────────────────────
                 sender_mode = request.form.get('sender_mode', 'any')
@@ -921,9 +946,12 @@ def unmatched_detail(email_id):
                 provider_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
                 db.execute(
                     "INSERT INTO provider_matchers "
-                    "  (provider_id, sender_email, subject_pattern, sender_phone) "
-                    "VALUES (?,?,?,?)",
-                    (provider_id, sender_email, subject_pattern, sender_phone)
+                    "  (provider_id, sender_email, subject_pattern, sender_phone, "
+                    "   body_pattern, body_match_type) "
+                    "VALUES (?,?,?,?,?,?)",
+                    (provider_id, sender_email, subject_pattern, sender_phone,
+                     body_pattern if channel_type == 'sms' else None,
+                     body_match_type if channel_type == 'sms' else None)
                 )
                 db.execute("DELETE FROM unmatched_items WHERE id=?", (email_id,))
                 _auto_update_status(db, config_id)

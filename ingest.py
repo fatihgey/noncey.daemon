@@ -232,10 +232,13 @@ def archive_sms(archive_root: str, username: str,
 
 # ── Provider matching ────────────────────────────────────────────────────────
 
-def match_sms_provider(conn, user_id: int, sender_phone: str):
+def match_sms_provider(conn, user_id: int, sender_phone: str, body: str = ''):
     """
-    Return the first providers row of channel_type='sms' whose matcher phone
-    matches *sender_phone*, or None.  Active-config rules are identical to email.
+    Return the first providers row of channel_type='sms' whose matcher fires,
+    or None.  A matcher fires when:
+      - sender_phone matches (if set), AND
+      - body_pattern matches (if set) according to body_match_type.
+    Active-config rules are identical to email.
     """
     providers = conn.execute(
         "SELECT p.id, p.config_id, p.extract_mode, "
@@ -254,13 +257,23 @@ def match_sms_provider(conn, user_id: int, sender_phone: str):
 
     for prov in providers:
         matchers = conn.execute(
-            "SELECT sender_phone FROM provider_matchers "
-            "WHERE  provider_id = ? AND sender_phone IS NOT NULL",
+            "SELECT sender_phone, body_pattern, body_match_type "
+            "FROM provider_matchers WHERE provider_id = ?",
             (prov['id'],)
         ).fetchall()
         for m in matchers:
-            if m['sender_phone'] == sender_phone:
-                return prov
+            # sender check
+            if m['sender_phone'] and m['sender_phone'] != sender_phone:
+                continue
+            # body check
+            if m['body_pattern']:
+                if m['body_match_type'] == 'starts_with':
+                    if not body.startswith(m['body_pattern']):
+                        continue
+                elif m['body_match_type'] == 'regex':
+                    if not re.search(m['body_pattern'], body):
+                        continue
+            return prov
     return None
 
 

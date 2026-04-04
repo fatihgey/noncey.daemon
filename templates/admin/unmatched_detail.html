@@ -129,7 +129,7 @@
   </div>
 
   {% if is_sms %}
-  {# ── SMS: sender phone only ── #}
+  {# ── SMS: sender phone ── #}
   <div class="field">
     <label>Sender phone</label>
     {% if row.sender %}
@@ -145,6 +145,30 @@
       <input type="text" name="sender_custom" placeholder="+491234567890"
              autocomplete="off" spellcheck="false" style="width:auto;flex:1;"
              onfocus="document.getElementById('sender-custom-radio').checked=true">
+    </label>
+  </div>
+
+  {# ── SMS: body pattern (optional) ── #}
+  <div class="field">
+    <label>Body pattern <span style="font-weight:normal;color:#666;">(optional)</span></label>
+    <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;margin-bottom:.35rem;">
+      <input type="radio" name="body_mode" value="any" checked>
+      Any body
+    </label>
+    <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;margin-bottom:.35rem;">
+      <input type="radio" name="body_mode" value="starts_with" id="body-starts-radio">
+      Begins with:
+      <input type="text" name="body_text" id="body-text-input"
+             placeholder="Your OTP is" autocomplete="off" spellcheck="false"
+             style="width:auto;flex:1;" onfocus="document.getElementById('body-starts-radio').checked=true">
+    </label>
+    <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;margin-bottom:.35rem;">
+      <input type="radio" name="body_mode" value="regex" id="body-regex-radio">
+      Regex:
+      <input type="text" name="body_regex" id="body-regex-input"
+             placeholder="^Your\s+OTP" autocomplete="off" spellcheck="false"
+             style="width:auto;flex:1;font-family:monospace;"
+             onfocus="document.getElementById('body-regex-radio').checked=true">
     </label>
   </div>
 

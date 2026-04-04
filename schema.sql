@@ -55,7 +55,9 @@ CREATE TABLE IF NOT EXISTS provider_matchers (
     provider_id     INTEGER NOT NULL REFERENCES providers(id) ON DELETE CASCADE,
     sender_email    TEXT,
     subject_pattern TEXT,
-    sender_phone    TEXT
+    sender_phone    TEXT,
+    body_pattern    TEXT,
+    body_match_type TEXT CHECK(body_match_type IN ('starts_with', 'regex'))
 );
 
 CREATE TABLE IF NOT EXISTS nonces (

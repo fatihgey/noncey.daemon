@@ -387,11 +387,22 @@ if 'sessions' in tables:
             "CHECK(client_type IN ('browser', 'chrome', 'android'))"
         )
 
+# ── Add body_pattern / body_match_type to provider_matchers (v4) ─────────────
+if 'provider_matchers' in tables:
+    cols = {r[1] for r in db.execute("PRAGMA table_info(provider_matchers)").fetchall()}
+    if 'body_pattern' not in cols:
+        db.execute("ALTER TABLE provider_matchers ADD COLUMN body_pattern TEXT")
+    if 'body_match_type' not in cols:
+        db.execute(
+            "ALTER TABLE provider_matchers ADD COLUMN body_match_type TEXT "
+            "CHECK(body_match_type IN ('starts_with', 'regex'))"
+        )
+
 db.execute("PRAGMA foreign_keys = ON")
 db.commit()
 db.close()
 PY
-ok "SMS support migrations applied (v3)."
+ok "SMS support migrations applied (v3/v4)."
 
 (
     cd "$INSTALL_DIR"
