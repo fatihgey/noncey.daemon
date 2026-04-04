@@ -510,7 +510,9 @@ def _process_provider_form(request, config, provider, db):
         if not start:
             return False, None, 'Example OTP not found in the sample text.'
     else:
-        start = request.form.get('nonce_start_marker', '').strip()
+        start = (request.form.get('nonce_regex_pattern', '').strip()
+                 if mode == 'regex'
+                 else request.form.get('nonce_start_marker', '').strip())
 
     if not tag:
         return False, None, 'Tag is required.'
@@ -876,7 +878,9 @@ def unmatched_detail(email_id):
                     return render_template('admin/unmatched_detail.html',
                                            row=row, user_configs=user_configs)
             else:
-                start = request.form.get('nonce_start_marker', '').strip()
+                start = (request.form.get('nonce_regex_pattern', '').strip()
+                 if mode == 'regex'
+                 else request.form.get('nonce_start_marker', '').strip())
 
             channel_type = row['channel_type']   # propagate from the unmatched item
 
@@ -1557,7 +1561,9 @@ def wizard_step2(config_id, email_id):
                 return render_template('admin/wizard_step2.html',
                                        config=config, email=email)
         else:
-            start = request.form.get('nonce_start_marker', '').strip()
+            start = (request.form.get('nonce_regex_pattern', '').strip()
+                 if mode == 'regex'
+                 else request.form.get('nonce_start_marker', '').strip())
 
         sender_mode = request.form.get('sender_mode', 'any')
         if sender_mode == 'sample':

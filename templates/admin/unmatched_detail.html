@@ -134,7 +134,7 @@
 
   <div id="regex-field" class="field" style="display:none;">
     <label for="nonce_regex">Regex pattern</label>
-    <input type="text" id="nonce_regex" name="nonce_start_marker"
+    <input type="text" id="nonce_regex" name="nonce_regex_pattern"
            autocomplete="off" spellcheck="false" style="font-family:monospace;">
     <p class="hint">
       Applied <strong>line by line</strong> — <code>\n</code> never appears in the input.<br>
@@ -287,9 +287,6 @@ function updateMode() {
   document.getElementById('end-field').style.display    = mode === 'markers'                             ? '' : 'none';
   document.getElementById('length-field').style.display = mode === 'start_length'                        ? '' : 'none';
   document.getElementById('regex-field').style.display  = mode === 'regex'                               ? '' : 'none';
-  // Only the active input submits; disable the other to avoid duplicate form values.
-  document.getElementById('nonce_start_marker').disabled = (mode === 'regex');
-  document.getElementById('nonce_regex').disabled        = (mode !== 'regex');
 }
 document.querySelectorAll('input[name=extract_mode]').forEach(function(r) {
   r.addEventListener('change', updateMode);
