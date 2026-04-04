@@ -1,17 +1,18 @@
 {% extends 'admin/_base.html' %}
-{% block title %}noncey — unmatched emails{% endblock %}
+{% block title %}noncey — unmatched items{% endblock %}
 {% block content %}
 
-<h1>Unmatched emails</h1>
+<h1>Unmatched items</h1>
 <p class="hint">
-  These emails were delivered to your nonce address but matched no configured provider.
-  Inspect an email to create a provider from it, or dismiss it.
+  These messages were received but matched no configured provider.
+  Inspect an item to create a provider from it, or dismiss it.
 </p>
 
 {% if emails %}
 <table>
   <thead>
     <tr>
+      <th>Type</th>
       <th>From</th>
       <th>Subject</th>
       <th>Received</th>
@@ -21,15 +22,28 @@
   <tbody>
     {% for e in emails %}
     <tr>
+      <td>
+        {% if e.channel_type == 'sms' %}
+        <span class="badge badge-sms">SMS</span>
+        {% else %}
+        <span class="badge badge-email">EMAIL</span>
+        {% endif %}
+      </td>
       <td>{{ e.sender or '' }}<span class="hint">{{ '(unknown)' if not e.sender }}</span></td>
-      <td>{{ e.subject or '' }}<span class="hint">{{ '(no subject)' if not e.subject }}</span></td>
+      <td>
+        {% if e.channel_type == 'sms' %}
+        <span class="hint">—</span>
+        {% else %}
+        {{ e.subject or '' }}<span class="hint">{{ '(no subject)' if not e.subject }}</span>
+        {% endif %}
+      </td>
       <td>{{ e.received_at[:16] }}</td>
       <td class="actions">
         <a class="btn btn-primary" href="{{ url_for('admin.unmatched_detail', email_id=e.id) }}">Inspect</a>
         <form class="inline" method="post"
               action="{{ url_for('admin.unmatched_dismiss', email_id=e.id) }}">
           <button class="btn btn-danger" type="submit"
-                  onclick="return confirm('Dismiss this email?')">Dismiss</button>
+                  onclick="return confirm('Dismiss this item?')">Dismiss</button>
         </form>
       </td>
     </tr>
@@ -37,9 +51,16 @@
   </tbody>
 </table>
 {% else %}
-<p class="empty">No unmatched emails.</p>
+<p class="empty">No unmatched items.</p>
 {% endif %}
 
 <a class="btn" href="{{ url_for('admin.dashboard') }}">← Back</a>
+
+<style>
+.badge { display:inline-block; padding:.15rem .4rem; border-radius:3px;
+         font-size:.72rem; font-weight:700; letter-spacing:.03em; }
+.badge-sms   { background:#e8f4fd; color:#0066cc; border:1px solid #b8d4f0; }
+.badge-email { background:#f0f0f0; color:#555;    border:1px solid #ccc; }
+</style>
 
 {% endblock %}

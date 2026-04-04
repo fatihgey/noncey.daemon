@@ -2,6 +2,8 @@
 {% block title %}noncey — {% if provider %}edit {{ provider.tag }}{% else %}new channel{% endif %}{% endblock %}
 {% block content %}
 
+{% set is_sms = (provider and provider.channel_type == 'sms') %}
+
 <h1>
   {% if provider %}Edit channel — {{ provider.tag }}
   {% else %}New channel — {{ config.name }}
@@ -9,6 +11,34 @@
 </h1>
 
 <form method="post" style="max-width: 600px;">
+
+  {% if provider %}
+  {# Channel type is fixed once created; display read-only #}
+  <div class="field">
+    <label>Channel type</label>
+    <p style="margin:.35rem 0;">
+      {% if is_sms %}
+      <span class="badge badge-sms">SMS</span>
+      {% else %}
+      <span class="badge badge-email">EMAIL</span>
+      {% endif %}
+    </p>
+    <input type="hidden" name="channel_type" value="{{ provider.channel_type }}">
+  </div>
+  {% else %}
+  <div class="field">
+    <label>Channel type</label>
+    <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;margin-bottom:.35rem;">
+      <input type="radio" name="channel_type" value="email" checked
+             onchange="updateChannelType()"> Email
+    </label>
+    <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;">
+      <input type="radio" name="channel_type" value="sms"
+             onchange="updateChannelType()"> SMS
+    </label>
+  </div>
+  {% endif %}
+
   <div class="field">
     <label for="tag">Tag</label>
     <input type="text" id="tag" name="tag"
@@ -17,7 +47,7 @@
     <p class="hint">Short label used in the extension dropdown, e.g. <code>github</code>, <code>bank-otp</code>.</p>
   </div>
 
-  <div class="field">
+  <div id="email-source-field" class="field">
     <label>Extract from</label>
     {% set cur_src = provider.extract_source if provider else 'body' %}
     <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;margin-bottom:.35rem;">
@@ -55,7 +85,7 @@
     <input type="text" id="example_otp" name="example_otp"
            autocomplete="off" spellcheck="false" placeholder="e.g. 482910">
     <p class="hint">
-      Enter an OTP value from the sample email above.
+      Enter an OTP value from the sample above.
       The daemon will derive the extraction pattern from it automatically.
     </p>
   </div>
@@ -84,11 +114,11 @@
     <p class="hint">Number of characters to read after the start marker.</p>
   </div>
 
-  <div class="field">
-    <label for="sample_email">Sample email <small>(optional)</small></label>
+  <div id="sample-field" class="field">
+    <label for="sample_email" id="sample-label">Sample email <small>(optional)</small></label>
     <textarea id="sample_email" name="sample_email"
               spellcheck="false">{{ provider.sample_email if provider else '' }}</textarea>
-    <p class="hint">Paste a representative email for reference and sender detection.</p>
+    <p class="hint" id="sample-hint">Paste a representative email for reference and sender detection.</p>
   </div>
 
   <input class="btn btn-primary" type="submit"
@@ -101,27 +131,42 @@
 <hr>
 
 <h2>Headers</h2>
+{% if is_sms %}
+<p class="hint">
+  An inbound SMS matches this provider when its sender phone number matches
+  any of the entries below. A provider with no headers will never capture nonces.
+</p>
+{% else %}
 <p class="hint">
   An inbound email matches this provider if <em>any one</em> header fires.
   A header fires when every condition it defines is satisfied
   (sender AND subject pattern, if both are set).
   A provider with no headers will never capture nonces.
 </p>
+{% endif %}
 
 {% if matchers %}
 <table>
   <thead>
     <tr>
+      {% if is_sms %}
+      <th>Sender phone</th>
+      {% else %}
       <th>Sender email</th>
       <th>Subject pattern&nbsp;<small>(regex)</small></th>
+      {% endif %}
       <th></th>
     </tr>
   </thead>
   <tbody>
     {% for m in matchers %}
     <tr>
+      {% if is_sms %}
+      <td>{{ m.sender_phone or '' }}<span class="hint">{{ '(any)' if not m.sender_phone }}</span></td>
+      {% else %}
       <td>{{ m.sender_email or '' }}<span class="hint">{{ '(any)' if not m.sender_email }}</span></td>
       <td>{{ m.subject_pattern or '' }}<span class="hint">{{ '(any)' if not m.subject_pattern }}</span></td>
+      {% endif %}
       <td>
         <form class="inline" method="post"
               action="{{ url_for('admin.matcher_delete',
@@ -143,6 +188,28 @@
 <form method="post" style="max-width: 600px;"
       action="{{ url_for('admin.matcher_new', config_id=config.id, provider_id=provider.id) }}">
 
+  {% if is_sms %}
+  {# ── SMS: sender phone ── #}
+  <div class="field">
+    <label>Sender phone</label>
+    {% if sample_sender %}
+    <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;margin-bottom:.35rem;">
+      <input type="radio" name="sender_mode" value="sample" checked>
+      Use sender from sample — <code>{{ sample_sender }}</code>
+    </label>
+    {% endif %}
+    <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;margin-bottom:.35rem;">
+      <input type="radio" name="sender_mode" value="custom" id="sender-custom-radio"
+             {{ 'checked' if not sample_sender }}>
+      Custom:
+      <input type="text" name="sender_custom" id="sender-custom-input"
+             placeholder="+491234567890" autocomplete="off" spellcheck="false"
+             style="width:auto;flex:1;" onfocus="document.getElementById('sender-custom-radio').checked=true">
+    </label>
+  </div>
+
+  {% else %}
+  {# ── Email: sender + subject ── #}
   <div class="field">
     <label>Sender</label>
     {% if sample_sender %}
@@ -163,7 +230,6 @@
              style="width:auto;flex:1;" onfocus="document.getElementById('sender-custom-radio').checked=true">
     </label>
   </div>
-  {# fwd_sender is not applicable when creating a provider from scratch (no stored unmatched email) #}
 
   <div class="field">
     <label>Subject</label>
@@ -187,13 +253,40 @@
     </label>
     <p class="hint">Regex examples: <code>verify</code> · <code>code|otp</code> · <code>^\[GitHub\]</code></p>
   </div>
+  {% endif %}
 
   <input class="btn btn-primary" type="submit" value="Add header">
 </form>
 
 {% endif %}{# end if provider #}
 
+<style>
+.badge { display:inline-block; padding:.15rem .4rem; border-radius:3px;
+         font-size:.72rem; font-weight:700; letter-spacing:.03em; }
+.badge-sms   { background:#e8f4fd; color:#0066cc; border:1px solid #b8d4f0; }
+.badge-email { background:#f0f0f0; color:#555;    border:1px solid #ccc; }
+</style>
+
 <script>
+// ── Toggle email-source field and sample label based on channel type ──────────
+function updateChannelType() {
+  var radios = document.querySelectorAll('input[name=channel_type]');
+  var isSms  = false;
+  radios.forEach(function(r) { if (r.checked && r.value === 'sms') isSms = true; });
+
+  var srcField = document.getElementById('email-source-field');
+  if (srcField) srcField.style.display = isSms ? 'none' : '';
+
+  var lbl  = document.getElementById('sample-label');
+  var hint = document.getElementById('sample-hint');
+  if (lbl)  lbl.textContent  = isSms ? 'Sample SMS body (optional)' : 'Sample email (optional)';
+  if (hint) hint.textContent = isSms
+    ? 'Paste a representative SMS body for reference.'
+    : 'Paste a representative email for reference and sender detection.';
+}
+updateChannelType();
+
+// ── Toggle extraction mode fields ─────────────────────────────────────────────
 function updateMode() {
   var mode = document.querySelector('input[name=extract_mode]:checked').value;
   document.getElementById('auto-field').style.display   = mode === 'auto'         ? ''     : 'none';

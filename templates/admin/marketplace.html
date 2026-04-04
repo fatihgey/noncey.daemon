@@ -10,6 +10,7 @@
   <thead>
     <tr>
       <th>Name</th>
+      <th>Channels</th>
       <th>Version</th>
       <th>Owner</th>
       <th>Description</th>
@@ -22,6 +23,12 @@
     <tr style="cursor:pointer;"
         onclick="location.href='{{ url_for('admin.config_detail', config_id=c.id) }}'">
       <td><strong>{{ c.name }}</strong></td>
+      <td>
+        {# Show channel-type badges for each provider in this config #}
+        {% set types = channel_types_map.get(c.id, []) %}
+        {% if 'email' in types %}<span class="badge badge-email">EMAIL</span> {% endif %}
+        {% if 'sms'   in types %}<span class="badge badge-sms">SMS</span> {% endif %}
+      </td>
       <td>{{ c.version }}</td>
       <td>{{ c.owner_name }}</td>
       <td>{{ c.description or '' }}</td>
@@ -57,5 +64,12 @@
 {% else %}
 <p class="empty">No public configurations yet.</p>
 {% endif %}
+
+<style>
+.badge { display:inline-block; padding:.15rem .4rem; border-radius:3px;
+         font-size:.72rem; font-weight:700; letter-spacing:.03em; }
+.badge-sms   { background:#e8f4fd; color:#0066cc; border:1px solid #b8d4f0; }
+.badge-email { background:#f0f0f0; color:#555;    border:1px solid #ccc; }
+</style>
 
 {% endblock %}

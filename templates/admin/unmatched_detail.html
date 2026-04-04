@@ -1,26 +1,36 @@
 {% extends 'admin/_base.html' %}
-{% block title %}noncey — unmatched email #{{ row.id }}{% endblock %}
+{% block title %}noncey — unmatched {{ 'SMS' if row.channel_type == 'sms' else 'email' }} #{{ row.id }}{% endblock %}
 {% block content %}
 
-<h1>Unmatched email #{{ row.id }}</h1>
+{% set is_sms = (row.channel_type == 'sms') %}
+
+<h1>
+  Unmatched {% if is_sms %}<span class="badge badge-sms">SMS</span>{% else %}<span class="badge badge-email">EMAIL</span>{% endif %}
+  #{{ row.id }}
+</h1>
 
 <table style="max-width:600px;margin-bottom:1.5rem;">
   <tr><th style="width:6rem;">From</th><td>{{ row.sender or '(unknown)' }}</td></tr>
-  {% if row.fwd_sender %}<tr><th>Forwarded from</th><td>{{ row.fwd_sender }}</td></tr>{% endif %}
+  {% if not is_sms and row.fwd_sender %}
+  <tr><th>Forwarded from</th><td>{{ row.fwd_sender }}</td></tr>
+  {% endif %}
+  {% if not is_sms %}
   <tr><th>Subject</th><td>{{ row.subject or '(no subject)' }}</td></tr>
+  {% endif %}
   <tr><th>Received</th><td>{{ row.received_at[:16] }}</td></tr>
 </table>
 
-<h2>Email body</h2>
+<h2>{{ 'SMS body' if is_sms else 'Email body' }}</h2>
 <pre id="body-text" style="background:#f7f7f7;border:1px solid #ddd;padding:.75rem 1rem;
      overflow:auto;max-height:20rem;font-size:.82rem;white-space:pre-wrap;word-break:break-all;">{{ row.body_text or '(empty)' }}</pre>
 
 <hr>
 
-<h2>Create channel from this email</h2>
+<h2>Create channel from this {{ 'SMS' if is_sms else 'email' }}</h2>
 
 <form method="post" style="max-width:600px;">
   <input type="hidden" name="action" value="promote">
+  <input type="hidden" name="channel_type" value="{{ row.channel_type }}">
 
   {# ── Target configuration ── #}
   <div class="field">
@@ -53,6 +63,7 @@
     <p class="hint">Short label used in the extension dropdown.</p>
   </div>
 
+  {% if not is_sms %}
   <div class="field">
     <label>Extract from</label>
     <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;margin-bottom:.35rem;">
@@ -62,6 +73,9 @@
       <input type="radio" name="extract_source" value="subject"> Subject line
     </label>
   </div>
+  {% else %}
+  <input type="hidden" name="extract_source" value="body">
+  {% endif %}
 
   <div class="field">
     <label>Extraction mode</label>
@@ -84,7 +98,7 @@
     <input type="text" id="example_otp" name="example_otp"
            autocomplete="off" spellcheck="false" placeholder="e.g. 482910">
     <p class="hint">
-      Enter the OTP value visible in the email above.
+      Enter the OTP value visible in the {{ 'SMS' if is_sms else 'email' }} above.
       The daemon derives the extraction pattern automatically.
     </p>
   </div>
@@ -114,6 +128,28 @@
     <input type="number" id="nonce_length" name="nonce_length" min="1" max="20" style="width:6rem;">
   </div>
 
+  {% if is_sms %}
+  {# ── SMS: sender phone only ── #}
+  <div class="field">
+    <label>Sender phone</label>
+    {% if row.sender %}
+    <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;margin-bottom:.35rem;">
+      <input type="radio" name="sender_mode" value="sample" checked>
+      Use sender from this SMS — <code>{{ row.sender }}</code>
+    </label>
+    {% endif %}
+    <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;margin-bottom:.35rem;">
+      <input type="radio" name="sender_mode" value="custom" id="sender-custom-radio"
+             {{ 'checked' if not row.sender }}>
+      Custom:
+      <input type="text" name="sender_custom" placeholder="+491234567890"
+             autocomplete="off" spellcheck="false" style="width:auto;flex:1;"
+             onfocus="document.getElementById('sender-custom-radio').checked=true">
+    </label>
+  </div>
+
+  {% else %}
+  {# ── Email: sender + subject ── #}
   <div class="field">
     <label>Sender</label>
     {% if row.sender %}
@@ -173,6 +209,7 @@
     </label>
     <p class="hint">Regex examples: <code>verify</code> · <code>code|otp</code> · <code>^\[GitHub\]</code></p>
   </div>
+  {% endif %}
 
   <input class="btn btn-primary" type="submit" value="Create channel">
 </form>
@@ -181,9 +218,16 @@
 
 <form method="post" action="{{ url_for('admin.unmatched_dismiss', email_id=row.id) }}">
   <button class="btn btn-danger" type="submit"
-          onclick="return confirm('Dismiss this email without creating a channel?')">Dismiss</button>
+          onclick="return confirm('Dismiss this item without creating a channel?')">Dismiss</button>
   <a class="btn" href="{{ url_for('admin.unmatched_list') }}">← Back</a>
 </form>
+
+<style>
+.badge { display:inline-block; padding:.15rem .4rem; border-radius:3px;
+         font-size:.72rem; font-weight:700; letter-spacing:.03em; }
+.badge-sms   { background:#e8f4fd; color:#0066cc; border:1px solid #b8d4f0; }
+.badge-email { background:#f0f0f0; color:#555;    border:1px solid #ccc; }
+</style>
 
 <script>
 // Show/hide new-config fields
@@ -208,16 +252,12 @@ updateMode();
 
 function detectMarkers() {
   var mode  = document.querySelector('input[name=extract_mode]:checked').value;
-  var src   = document.querySelector('input[name=extract_source]:checked').value;
   var nonce = document.getElementById('nonce-detect').value.trim();
   if (!nonce) { alert('Enter the OTP value first.'); return; }
 
-  var text = src === 'subject'
-    ? {{ row.subject | tojson }}
-    : document.getElementById('body-text').textContent;
-
-  var idx = text.indexOf(nonce);
-  if (idx === -1) { alert('OTP value not found in the selected source.'); return; }
+  var text = document.getElementById('body-text').textContent;
+  var idx  = text.indexOf(nonce);
+  if (idx === -1) { alert('OTP value not found in the body.'); return; }
 
   var before    = text.substring(0, idx);
   var lineStart = before.lastIndexOf('\n') + 1;

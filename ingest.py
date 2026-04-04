@@ -215,7 +215,54 @@ def archive_email(archive_root: str, username: str, raw_bytes: bytes) -> None:
     (user_dir / f"{ts}.eml").write_bytes(raw_bytes)
 
 
+def archive_sms(archive_root: str, username: str,
+                sender: str, body: str, received_at: str) -> None:
+    import json as _json
+    sms_dir = Path(archive_root) / username / 'sms'
+    sms_dir.mkdir(parents=True, exist_ok=True)
+    ts          = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%f')
+    safe_sender = re.sub(r'[^\w]', '', sender)          # strip +, spaces, etc.
+    path        = sms_dir / f"{ts}_{safe_sender}.json"
+    path.write_text(
+        _json.dumps({'sender': sender, 'body': body, 'received_at': received_at},
+                    ensure_ascii=False),
+        encoding='utf-8',
+    )
+
+
 # ── Provider matching ────────────────────────────────────────────────────────
+
+def match_sms_provider(conn, user_id: int, sender_phone: str):
+    """
+    Return the first providers row of channel_type='sms' whose matcher phone
+    matches *sender_phone*, or None.  Active-config rules are identical to email.
+    """
+    providers = conn.execute(
+        "SELECT p.id, p.config_id, p.extract_mode, "
+        "       p.nonce_start_marker, p.nonce_end_marker, p.nonce_length "
+        "FROM   providers p "
+        "LEFT JOIN configurations c ON c.id = p.config_id "
+        "WHERE  p.user_id = ? AND p.channel_type = 'sms' "
+        "  AND (p.config_id IS NULL "
+        "       OR (c.visibility = 'private' AND c.activated = 1 "
+        "           AND c.status IN ('valid', 'valid_tested')) "
+        "       OR (c.visibility = 'public' "
+        "           AND EXISTS (SELECT 1 FROM subscriptions s "
+        "                       WHERE s.user_id = ? AND s.config_id = c.id)))",
+        (user_id, user_id)
+    ).fetchall()
+
+    for prov in providers:
+        matchers = conn.execute(
+            "SELECT sender_phone FROM provider_matchers "
+            "WHERE  provider_id = ? AND sender_phone IS NOT NULL",
+            (prov['id'],)
+        ).fetchall()
+        for m in matchers:
+            if m['sender_phone'] == sender_phone:
+                return prov
+    return None
+
 
 def find_matching_provider(conn, user_id: int, sender_addr: str, subject: str):
     """
@@ -318,9 +365,9 @@ def main():
             archive_email(archive_root, username, raw_bytes)
             with conn:
                 conn.execute(
-                    "INSERT INTO unmatched_emails "
-                    "  (user_id, sender, fwd_sender, subject, body_text) "
-                    "VALUES (?, ?, ?, ?, ?)",
+                    "INSERT INTO unmatched_items "
+                    "  (user_id, channel_type, sender, fwd_sender, subject, body_text) "
+                    "VALUES (?, 'email', ?, ?, ?, ?)",
                     (user_id, sender_addr, fwd_sender, subject, body)
                 )
             sys.exit(0)

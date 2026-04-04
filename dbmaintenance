@@ -62,7 +62,7 @@ cmd_clearconfigurations() {
     echo "  • All subscriptions"
     echo "  • All nonces"
     echo ""
-    echo "Users, sessions, and unmatched emails are kept."
+    echo "Users, sessions, and unmatched items are kept."
     echo ""
     confirm "Proceed?" || { echo "Aborted."; exit 0; }
 
@@ -96,14 +96,14 @@ cmd_showstate() {
 
     q "Providers (channels) — including orphans (config_id IS NULL)" \
       "SELECT p.id, u.username AS owner, p.config_id,
-              p.tag, p.extract_mode,
+              p.tag, p.channel_type, p.extract_mode,
               p.nonce_start_marker
        FROM providers p JOIN users u ON u.id=p.user_id
        ORDER BY p.user_id, p.id;"
 
     q "Matchers (headers)" \
       "SELECT pm.id, pm.provider_id, p.tag,
-              pm.sender_email, pm.subject_pattern
+              pm.sender_email, pm.subject_pattern, pm.sender_phone
        FROM provider_matchers pm JOIN providers p ON p.id=pm.provider_id
        ORDER BY pm.provider_id;"
 
@@ -122,9 +122,9 @@ cmd_showstate() {
        JOIN providers p ON p.id=n.provider_id
        ORDER BY n.received_at DESC LIMIT 10;"
 
-    q "Unmatched emails (most recent 10)" \
-      "SELECT e.id, u.username, e.sender, e.subject, e.received_at
-       FROM unmatched_emails e JOIN users u ON u.id=e.user_id
+    q "Unmatched items (most recent 10)" \
+      "SELECT e.id, u.username, e.channel_type, e.sender, e.subject, e.received_at
+       FROM unmatched_items e JOIN users u ON u.id=e.user_id
        ORDER BY e.received_at DESC LIMIT 10;"
 }
 

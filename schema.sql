@@ -39,6 +39,8 @@ CREATE TABLE IF NOT EXISTS providers (
     user_id             INTEGER NOT NULL REFERENCES users(id)         ON DELETE CASCADE,
     config_id           INTEGER          REFERENCES configurations(id) ON DELETE SET NULL,
     tag                 TEXT    NOT NULL,
+    channel_type        TEXT    NOT NULL DEFAULT 'email'
+                            CHECK(channel_type IN ('email', 'sms')),
     extract_source      TEXT    NOT NULL DEFAULT 'body',
     extract_mode        TEXT    NOT NULL DEFAULT 'auto',
     nonce_start_marker  TEXT    NOT NULL DEFAULT '',
@@ -52,7 +54,8 @@ CREATE TABLE IF NOT EXISTS provider_matchers (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     provider_id     INTEGER NOT NULL REFERENCES providers(id) ON DELETE CASCADE,
     sender_email    TEXT,
-    subject_pattern TEXT
+    subject_pattern TEXT,
+    sender_phone    TEXT
 );
 
 CREATE TABLE IF NOT EXISTS nonces (
@@ -68,19 +71,23 @@ CREATE TABLE IF NOT EXISTS sessions (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     token_hash   TEXT    NOT NULL UNIQUE,
+    client_type  TEXT    NOT NULL DEFAULT 'browser'
+                     CHECK(client_type IN ('browser', 'chrome', 'android')),
     created_at   TEXT    NOT NULL DEFAULT (datetime('now')),
     last_used_at TEXT    NOT NULL DEFAULT (datetime('now')),
     expires_at   TEXT    NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS unmatched_emails (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    sender      TEXT,
-    fwd_sender  TEXT,
-    subject     TEXT,
-    body_text   TEXT,
-    received_at TEXT NOT NULL DEFAULT (datetime('now'))
+CREATE TABLE IF NOT EXISTS unmatched_items (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    channel_type TEXT    NOT NULL DEFAULT 'email'
+                     CHECK(channel_type IN ('email', 'sms')),
+    sender       TEXT,
+    fwd_sender   TEXT,
+    subject      TEXT,
+    body_text    TEXT,
+    received_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 CREATE TABLE IF NOT EXISTS marketplace_reviews (
@@ -95,7 +102,7 @@ CREATE TABLE IF NOT EXISTS marketplace_reviews (
 CREATE INDEX IF NOT EXISTS idx_nonces_user_expires    ON nonces(user_id, expires_at);
 CREATE INDEX IF NOT EXISTS idx_sessions_token_hash    ON sessions(token_hash);
 CREATE INDEX IF NOT EXISTS idx_sessions_user          ON sessions(user_id);
-CREATE INDEX IF NOT EXISTS idx_unmatched_user         ON unmatched_emails(user_id, received_at);
+CREATE INDEX IF NOT EXISTS idx_unmatched_user         ON unmatched_items(user_id, received_at);
 CREATE INDEX IF NOT EXISTS idx_providers_config       ON providers(config_id);
 CREATE INDEX IF NOT EXISTS idx_configs_owner          ON configurations(owner_id);
 CREATE INDEX IF NOT EXISTS idx_configs_status         ON configurations(status);

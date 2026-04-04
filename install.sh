@@ -328,6 +328,71 @@ db.close()
 PY
 ok "Configuration model v2 migrations applied."
 
+# Third migration block: SMS channel support (v3)
+# - Renames unmatched_emails → unmatched_items (preserving all rows)
+# - Adds channel_type discriminator to unmatched_items and providers
+# - Adds sender_phone to provider_matchers
+# - Adds client_type to sessions (for Change #20 session management UI)
+sudo -u noncey "$VENV/bin/python3" - "$DB_PATH" <<'PY'
+import sys, sqlite3
+db = sqlite3.connect(sys.argv[1])
+db.execute("PRAGMA foreign_keys = OFF")
+
+tables = {r[0] for r in db.execute(
+    "SELECT name FROM sqlite_master WHERE type='table'"
+).fetchall()}
+
+# ── Rename unmatched_emails → unmatched_items ─────────────────────────────────
+# If the old table exists and the new one does not, rename it so all existing
+# rows are preserved.  If both exist (partial upgrade), leave them as-is and
+# let the column-add below bring unmatched_items up to date.
+if 'unmatched_emails' in tables and 'unmatched_items' not in tables:
+    db.execute("ALTER TABLE unmatched_emails RENAME TO unmatched_items")
+    # Drop the old index (name referenced the old table name); the new one is
+    # created by flask init-db / schema.sql under idx_unmatched_user.
+    db.execute("DROP INDEX IF EXISTS idx_unmatched_user")
+    tables.add('unmatched_items')
+    tables.discard('unmatched_emails')
+
+# ── Add channel_type to unmatched_items ───────────────────────────────────────
+if 'unmatched_items' in tables:
+    cols = {r[1] for r in db.execute("PRAGMA table_info(unmatched_items)").fetchall()}
+    if 'channel_type' not in cols:
+        db.execute(
+            "ALTER TABLE unmatched_items ADD COLUMN channel_type TEXT NOT NULL DEFAULT 'email' "
+            "CHECK(channel_type IN ('email', 'sms'))"
+        )
+
+# ── Add channel_type to providers ─────────────────────────────────────────────
+if 'providers' in tables:
+    cols = {r[1] for r in db.execute("PRAGMA table_info(providers)").fetchall()}
+    if 'channel_type' not in cols:
+        db.execute(
+            "ALTER TABLE providers ADD COLUMN channel_type TEXT NOT NULL DEFAULT 'email' "
+            "CHECK(channel_type IN ('email', 'sms'))"
+        )
+
+# ── Add sender_phone to provider_matchers ─────────────────────────────────────
+if 'provider_matchers' in tables:
+    cols = {r[1] for r in db.execute("PRAGMA table_info(provider_matchers)").fetchall()}
+    if 'sender_phone' not in cols:
+        db.execute("ALTER TABLE provider_matchers ADD COLUMN sender_phone TEXT")
+
+# ── Add client_type to sessions ───────────────────────────────────────────────
+if 'sessions' in tables:
+    cols = {r[1] for r in db.execute("PRAGMA table_info(sessions)").fetchall()}
+    if 'client_type' not in cols:
+        db.execute(
+            "ALTER TABLE sessions ADD COLUMN client_type TEXT NOT NULL DEFAULT 'browser' "
+            "CHECK(client_type IN ('browser', 'chrome', 'android'))"
+        )
+
+db.execute("PRAGMA foreign_keys = ON")
+db.commit()
+db.close()
+PY
+ok "SMS support migrations applied (v3)."
+
 (
     cd "$INSTALL_DIR"
     sudo -u noncey \
@@ -532,8 +597,9 @@ ok "Service enabled."
 # =============================================================================
 step "Cron: ${ETC_DIR}/noncey.cron"
 cat > "${ETC_DIR}/noncey.cron" <<EOF
-# noncey — purge archived .eml files older than ${ARCHIVE_RETENTION} days
-0 3 * * *  noncey  find ${ARCHIVE_PATH} -name "*.eml" -mtime +${ARCHIVE_RETENTION} -delete 2>/dev/null
+# noncey — purge email archives (.eml) and SMS archives (.json) older than ${ARCHIVE_RETENTION} days
+0 3 * * *  noncey  find ${ARCHIVE_PATH} -name "*.eml"  -mtime +${ARCHIVE_RETENTION} -delete 2>/dev/null
+0 3 * * *  noncey  find ${ARCHIVE_PATH} -name "*.json" -mtime +${ARCHIVE_RETENTION} -delete 2>/dev/null
 EOF
 chown root:root "${ETC_DIR}/noncey.cron"
 chmod 644       "${ETC_DIR}/noncey.cron"
