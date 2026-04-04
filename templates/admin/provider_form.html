@@ -153,8 +153,9 @@
 <h2>Headers</h2>
 {% if is_sms %}
 <p class="hint">
-  An inbound SMS matches this provider when its sender phone (required) and
-  optional body pattern both match. A provider with no headers will never capture nonces.
+  An inbound SMS matches this provider when its header fires.
+  A header requires a sender phone, a body pattern, or both.
+  A provider with no headers will never capture nonces.
 </p>
 {% else %}
 <p class="hint">
@@ -218,8 +219,10 @@
       action="{{ url_for('admin.matcher_new', config_id=config.id, provider_id=provider.id) }}">
 
   {% if is_sms %}
-  {# ── SMS: sender phone ── #}
-  <div class="field">
+  {# ── SMS: sender phone + body pattern (at least one required) ── #}
+  <div class="field" style="border:1px solid #ddd;border-radius:4px;padding:.75rem 1rem;background:#fafafa;">
+    <p style="margin:0 0 .6rem;font-size:.82rem;color:#666;">At least one of the following must be specified.</p>
+
     <label>Sender phone</label>
     {% if sample_sender %}
     <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;margin-bottom:.35rem;">
@@ -227,7 +230,7 @@
       Use sender from sample — <code>{{ sample_sender }}</code>
     </label>
     {% endif %}
-    <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;margin-bottom:.35rem;">
+    <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;margin-bottom:.75rem;">
       <input type="radio" name="sender_mode" value="custom" id="sender-custom-radio"
              {{ 'checked' if not sample_sender }}>
       Custom:
@@ -235,11 +238,8 @@
              placeholder="+491234567890" autocomplete="off" spellcheck="false"
              style="width:auto;flex:1;" onfocus="document.getElementById('sender-custom-radio').checked=true">
     </label>
-  </div>
 
-  {# ── SMS: body pattern (optional) ── #}
-  <div class="field">
-    <label>Body pattern <span style="font-weight:normal;color:#666;">(optional)</span></label>
+    <label>Body pattern</label>
     <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;margin-bottom:.35rem;">
       <input type="radio" name="body_mode" value="any" id="body-any-radio" checked>
       Any body
