@@ -73,10 +73,15 @@
              {{ 'checked' if cur_mode == 'markers' }}>
       <strong>Start + end marker</strong>
     </label>
-    <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;">
+    <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;margin-bottom:.35rem;">
       <input type="radio" name="extract_mode" value="start_length"
              {{ 'checked' if cur_mode == 'start_length' }}>
       <strong>Start marker + fixed length</strong>
+    </label>
+    <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;">
+      <input type="radio" name="extract_mode" value="regex"
+             {{ 'checked' if cur_mode == 'regex' }}>
+      <strong>Regex</strong>
     </label>
   </div>
 
@@ -112,6 +117,21 @@
            value="{{ provider.nonce_length if provider and provider.nonce_length else '' }}"
            style="width:6rem;">
     <p class="hint">Number of characters to read after the start marker.</p>
+  </div>
+
+  <div id="regex-field" class="field">
+    <label for="nonce_regex">Regex pattern</label>
+    <input type="text" id="nonce_regex" name="nonce_start_marker"
+           value="{{ provider.nonce_start_marker if provider and provider.extract_mode == 'regex' else '' }}"
+           autocomplete="off" spellcheck="false" style="font-family:monospace;">
+    <p class="hint">
+      Applied <strong>line by line</strong> — <code>\n</code> never appears in the input.<br>
+      Use a <strong>capturing group</strong> <code>( )</code> to mark the nonce within the match.
+      Without a group the entire match is used.<br>
+      Example: a line reading <code>Your code: 482910</code><br>
+      &nbsp;&nbsp;→ pattern <code>Your code:\s+(\d+)</code> captures <code>482910</code><br>
+      &nbsp;&nbsp;→ pattern <code>^(\d{4,9})$</code> captures a standalone digit-only line
+    </p>
   </div>
 
   <div id="sample-field" class="field">
@@ -322,10 +342,13 @@ updateChannelType();
 // ── Toggle extraction mode fields ─────────────────────────────────────────────
 function updateMode() {
   var mode = document.querySelector('input[name=extract_mode]:checked').value;
-  document.getElementById('auto-field').style.display   = mode === 'auto'         ? ''     : 'none';
-  document.getElementById('start-field').style.display  = mode === 'auto'         ? 'none' : '';
-  document.getElementById('end-field').style.display    = mode === 'markers'       ? ''     : 'none';
-  document.getElementById('length-field').style.display = mode === 'start_length'  ? ''     : 'none';
+  document.getElementById('auto-field').style.display   = mode === 'auto'                                ? '' : 'none';
+  document.getElementById('start-field').style.display  = (mode === 'markers' || mode === 'start_length') ? '' : 'none';
+  document.getElementById('end-field').style.display    = mode === 'markers'                             ? '' : 'none';
+  document.getElementById('length-field').style.display = mode === 'start_length'                        ? '' : 'none';
+  document.getElementById('regex-field').style.display  = mode === 'regex'                               ? '' : 'none';
+  document.getElementById('nonce_start_marker').disabled = (mode === 'regex');
+  document.getElementById('nonce_regex').disabled        = (mode !== 'regex');
 }
 document.querySelectorAll('input[name=extract_mode]').forEach(function(r) {
   r.addEventListener('change', updateMode);

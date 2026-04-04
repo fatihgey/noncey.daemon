@@ -189,6 +189,17 @@ def extract_nonce(
             return None
         return stripped[:length] if length else stripped.strip() or None
 
+    if mode == 'regex':
+        try:
+            pattern = re.compile(start_marker)
+        except re.error:
+            return None
+        for line in text.splitlines():
+            m = pattern.search(line)
+            if m:
+                return m.group(1) if m.lastindex else m.group(0)
+        return None
+
     # mode == 'markers'
     if end_marker:
         end_idx = search_area.find(end_marker)

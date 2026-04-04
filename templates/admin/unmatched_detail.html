@@ -87,9 +87,13 @@
       <input type="radio" name="extract_mode" value="markers">
       <strong>Start + end marker</strong>
     </label>
-    <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;">
+    <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;margin-bottom:.35rem;">
       <input type="radio" name="extract_mode" value="start_length">
       <strong>Start marker + fixed length</strong>
+    </label>
+    <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;">
+      <input type="radio" name="extract_mode" value="regex">
+      <strong>Regex</strong>
     </label>
   </div>
 
@@ -126,6 +130,20 @@
   <div id="length-field" class="field" style="display:none;">
     <label for="nonce_length">OTP length <small>(characters)</small></label>
     <input type="number" id="nonce_length" name="nonce_length" min="1" max="20" style="width:6rem;">
+  </div>
+
+  <div id="regex-field" class="field" style="display:none;">
+    <label for="nonce_regex">Regex pattern</label>
+    <input type="text" id="nonce_regex" name="nonce_start_marker"
+           autocomplete="off" spellcheck="false" style="font-family:monospace;">
+    <p class="hint">
+      Applied <strong>line by line</strong> — <code>\n</code> never appears in the input.<br>
+      Use a <strong>capturing group</strong> <code>( )</code> to mark the nonce within the match.
+      Without a group the entire match is used.<br>
+      Example: a line reading <code>Your code: 482910</code><br>
+      &nbsp;&nbsp;→ pattern <code>Your code:\s+(\d+)</code> captures <code>482910</code><br>
+      &nbsp;&nbsp;→ pattern <code>^(\d{4,9})$</code> captures a standalone digit-only line
+    </p>
   </div>
 
   {% if is_sms %}
@@ -264,10 +282,14 @@ document.querySelectorAll('input[name=config_choice]').forEach(function(r) {
 
 function updateMode() {
   var mode = document.querySelector('input[name=extract_mode]:checked').value;
-  document.getElementById('auto-field').style.display   = mode === 'auto'        ? ''     : 'none';
-  document.getElementById('start-field').style.display  = mode === 'auto'        ? 'none' : '';
-  document.getElementById('end-field').style.display    = mode === 'markers'      ? ''     : 'none';
-  document.getElementById('length-field').style.display = mode === 'start_length' ? ''     : 'none';
+  document.getElementById('auto-field').style.display   = mode === 'auto'                                ? '' : 'none';
+  document.getElementById('start-field').style.display  = (mode === 'markers' || mode === 'start_length') ? '' : 'none';
+  document.getElementById('end-field').style.display    = mode === 'markers'                             ? '' : 'none';
+  document.getElementById('length-field').style.display = mode === 'start_length'                        ? '' : 'none';
+  document.getElementById('regex-field').style.display  = mode === 'regex'                               ? '' : 'none';
+  // Only the active input submits; disable the other to avoid duplicate form values.
+  document.getElementById('nonce_start_marker').disabled = (mode === 'regex');
+  document.getElementById('nonce_regex').disabled        = (mode !== 'regex');
 }
 document.querySelectorAll('input[name=extract_mode]').forEach(function(r) {
   r.addEventListener('change', updateMode);
