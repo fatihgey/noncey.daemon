@@ -197,7 +197,10 @@ def auth_login():
             "SELECT id, password_hash FROM users WHERE username=?", (username,)
         ).fetchone()
         stored = user['password_hash'] if user else _DUMMY_HASH
-        ok     = bcrypt.checkpw(password.encode(), stored.encode())
+        try:
+            ok = bcrypt.checkpw(password.encode(), stored.encode())
+        except ValueError:
+            ok = False
 
         if not user or not ok:
             flash('Invalid username or password.', 'error')
