@@ -698,10 +698,6 @@ def matcher_new(config_id, provider_id):
         else:
             phone = ''
         phone = phone.strip() or None
-        if not phone:
-            flash('Sender phone number is required for an SMS matcher.', 'error')
-            return redirect(url_for('admin.channel_edit',
-                                    config_id=config_id, provider_id=provider_id))
 
         body_mode = request.form.get('body_mode', 'any')
         if body_mode == 'starts_with':
@@ -713,6 +709,11 @@ def matcher_new(config_id, provider_id):
         else:
             body_pattern    = None
             body_match_type = None
+
+        if not phone and not body_pattern:
+            flash('An SMS header requires a phone number, a body pattern, or both.', 'error')
+            return redirect(url_for('admin.channel_edit',
+                                    config_id=config_id, provider_id=provider_id))
 
         db.execute(
             "INSERT INTO provider_matchers "
@@ -906,6 +907,11 @@ def unmatched_detail(email_id):
                 else:
                     body_pattern    = None
                     body_match_type = None
+
+                if not sender_phone and not body_pattern:
+                    flash('An SMS header requires a phone number, a body pattern, or both.', 'error')
+                    return render_template('admin/unmatched_detail.html',
+                                           row=row, user_configs=user_configs)
             else:
                 # ── Email sender ──────────────────────────────────────────────
                 sender_mode = request.form.get('sender_mode', 'any')
