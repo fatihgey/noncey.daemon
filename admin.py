@@ -25,6 +25,10 @@ admin_bp = Blueprint(
     template_folder='templates',
 )
 
+# Pre-computed dummy hash for timing-safe login (bcrypt 4.x requires a valid hash).
+# rounds=4 keeps startup fast; the value is never used to authenticate anyone.
+_DUMMY_HASH = bcrypt.hashpw(b'noncey-timing-dummy', bcrypt.gensalt(rounds=4)).decode()
+
 
 # ── Auth helpers ──────────────────────────────────────────────────────────────
 
@@ -192,8 +196,7 @@ def auth_login():
         user = db.execute(
             "SELECT id, password_hash FROM users WHERE username=?", (username,)
         ).fetchone()
-        dummy = '$2b$12$aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
-        stored = user['password_hash'] if user else dummy
+        stored = user['password_hash'] if user else _DUMMY_HASH
         ok     = bcrypt.checkpw(password.encode(), stored.encode())
 
         if not user or not ok:
