@@ -219,27 +219,52 @@
       action="{{ url_for('admin.matcher_new', config_id=config.id, provider_id=provider.id) }}">
 
   {% if is_sms %}
-  {# ── SMS: sender phone + body pattern (at least one required) ── #}
-  <div class="field" style="border:1px solid #ddd;border-radius:4px;padding:.75rem 1rem;background:#fafafa;">
-    <p style="margin:0 0 .6rem;font-size:.82rem;color:#666;">At least one of the following must be specified.</p>
+  {# ── SMS: top-level match_by radio → phone section OR body section ── #}
+  {# sender_mode hidden input is kept in sync by JS so the server needs no changes #}
+  <input type="hidden" name="sender_mode" id="pf-sender-mode-val"
+         value="{{ 'sample' if sample_sender else 'custom' }}">
 
-    <label>Sender phone</label>
+  <div class="field">
+    <label>Match by</label>
+    <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;margin-bottom:.35rem;">
+      <input type="radio" name="match_by" value="phone" id="pf-match-phone" checked
+             onchange="pfSmsMatchChanged()">
+      Sender phone
+    </label>
+    <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;">
+      <input type="radio" name="match_by" value="body" id="pf-match-body"
+             onchange="pfSmsMatchChanged()">
+      Body pattern
+    </label>
+  </div>
+
+  {# ── Phone sub-section ── #}
+  <div id="pf-phone-section" class="field" style="margin-left:1.5rem;">
     {% if sample_sender %}
     <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;margin-bottom:.35rem;">
-      <input type="radio" name="sender_mode" value="sample" checked>
+      <input type="radio" name="phone_sub" value="sample" checked
+             onchange="document.getElementById('pf-sender-mode-val').value='sample'">
       Use sender from sample — <code>{{ sample_sender }}</code>
     </label>
-    {% endif %}
-    <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;margin-bottom:.75rem;">
-      <input type="radio" name="sender_mode" value="custom" id="sender-custom-radio"
-             {{ 'checked' if not sample_sender }}>
+    <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;">
+      <input type="radio" name="phone_sub" value="custom" id="pf-phone-sub-custom"
+             onchange="document.getElementById('pf-sender-mode-val').value='custom'">
       Custom:
       <input type="text" name="sender_custom" id="sender-custom-input"
              placeholder="+491234567890" autocomplete="off" spellcheck="false"
-             style="width:auto;flex:1;" onfocus="document.getElementById('sender-custom-radio').checked=true">
+             style="width:auto;flex:1;"
+             onfocus="document.getElementById('pf-phone-sub-custom').checked=true;
+                      document.getElementById('pf-sender-mode-val').value='custom'">
     </label>
+    {% else %}
+    <input type="text" name="sender_custom" id="sender-custom-input"
+           placeholder="+491234567890" autocomplete="off" spellcheck="false"
+           style="max-width:20rem;">
+    {% endif %}
+  </div>
 
-    <label>Body pattern</label>
+  {# ── Body sub-section ── #}
+  <div id="pf-body-section" class="field" style="display:none;margin-left:1.5rem;">
     <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;margin-bottom:.35rem;">
       <input type="radio" name="body_mode" value="any" id="body-any-radio" checked>
       Any body
@@ -251,7 +276,7 @@
              placeholder="Your OTP is" autocomplete="off" spellcheck="false"
              style="width:auto;flex:1;" onfocus="document.getElementById('body-starts-radio').checked=true">
     </label>
-    <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;margin-bottom:.35rem;">
+    <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;">
       <input type="radio" name="body_mode" value="regex" id="body-regex-radio">
       Regex:
       <input type="text" name="body_regex" id="body-regex-input"
@@ -352,6 +377,29 @@ document.querySelectorAll('input[name=extract_mode]').forEach(function(r) {
   r.addEventListener('change', updateMode);
 });
 updateMode();
+
+// ── SMS: toggle phone / body sections ────────────────────────────────────────
+function pfSmsMatchChanged() {
+  var isPhone = document.getElementById('pf-match-phone') &&
+                document.getElementById('pf-match-phone').checked;
+  var phoneEl = document.getElementById('pf-phone-section');
+  var bodyEl  = document.getElementById('pf-body-section');
+  if (!phoneEl || !bodyEl) return;
+  phoneEl.style.display = isPhone ? '' : 'none';
+  bodyEl.style.display  = isPhone ? 'none' : '';
+  var modeEl = document.getElementById('pf-sender-mode-val');
+  if (!modeEl) return;
+  if (!isPhone) {
+    modeEl.value = 'none';
+  } else {
+    {% if sample_sender %}
+    var sub = document.querySelector('input[name=phone_sub]:checked');
+    modeEl.value = sub ? sub.value : 'sample';
+    {% else %}
+    modeEl.value = 'custom';
+    {% endif %}
+  }
+}
 </script>
 
 {% endblock %}
