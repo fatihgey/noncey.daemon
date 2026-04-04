@@ -11,6 +11,10 @@ REST endpoints (all under /api/):
   GET    /api/configs
   POST   /api/configs/<id>/prompt
   POST   /api/configs/<id>/client-test
+  POST   /api/configs/<id>/activate
+  POST   /api/configs/<id>/deactivate
+  DELETE /api/subscriptions/<config_id>
+  POST   /api/sms/ingest
 
 Admin UI (all under /auth/, proxied via nonces VirtualHost):
   see admin.py
@@ -23,6 +27,7 @@ Flask CLI:
 
 import hashlib
 import json
+import re
 import sqlite3
 from datetime import datetime, timedelta, timezone
 from functools import wraps
@@ -137,9 +142,12 @@ def require_auth(f):
 
 @app.post('/api/auth/login')
 def login():
-    data     = request.get_json(silent=True) or {}
-    username = data.get('username', '').strip()
-    password = data.get('password', '')
+    data        = request.get_json(silent=True) or {}
+    username    = data.get('username', '').strip()
+    password    = data.get('password', '')
+    client_type = data.get('client_type', 'browser')
+    if client_type not in ('browser', 'chrome', 'android'):
+        client_type = 'browser'
     if not username or not password:
         return jsonify({'error': 'username and password required'}), 400
 
@@ -157,9 +165,9 @@ def login():
     expires_at = (now + timedelta(days=SESSION_LIFETIME_DAYS)).isoformat()
 
     cur = db.execute(
-        "INSERT INTO sessions (user_id, token_hash, created_at, last_used_at, expires_at) "
-        "VALUES (?, ?, ?, ?, ?)",
-        (user['id'], '_placeholder_', now.isoformat(), now.isoformat(), expires_at)
+        "INSERT INTO sessions (user_id, token_hash, created_at, last_used_at, expires_at, client_type) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (user['id'], '_placeholder_', now.isoformat(), now.isoformat(), expires_at, client_type)
     )
     session_id = cur.lastrowid
     db.commit()
@@ -263,10 +271,27 @@ def list_configs():
 
     result = []
 
-    for row in own_rows:
-        tags = db.execute(
-            "SELECT tag FROM providers WHERE config_id = ?", (row['id'],)
+    def _provider_info(config_id):
+        """Return (tags, channel_types, sms_senders) for a config."""
+        providers = db.execute(
+            "SELECT id, tag, channel_type FROM providers WHERE config_id = ?",
+            (config_id,)
         ).fetchall()
+        tags          = [p['tag']          for p in providers]
+        channel_types = [p['channel_type'] for p in providers]
+        sms_senders   = []
+        for p in providers:
+            if p['channel_type'] == 'sms':
+                rows = db.execute(
+                    "SELECT sender_phone FROM provider_matchers "
+                    "WHERE  provider_id = ? AND sender_phone IS NOT NULL",
+                    (p['id'],)
+                ).fetchall()
+                sms_senders.extend(r['sender_phone'] for r in rows)
+        return tags, channel_types, sms_senders
+
+    for row in own_rows:
+        tags, channel_types, sms_senders = _provider_info(row['id'])
         prompt_data = json.loads(row['prompt']) if row['prompt'] else None
         result.append({
             'id':            row['id'],
@@ -277,13 +302,13 @@ def list_configs():
             'activated':     bool(row['activated']),
             'prompt':        prompt_data,
             'is_owned':      True,
-            'provider_tags': [t['tag'] for t in tags],
+            'provider_tags': tags,
+            'channel_types': channel_types,
+            'sms_senders':   sms_senders,
         })
 
     for row in sub_rows:
-        tags = db.execute(
-            "SELECT tag FROM providers WHERE config_id = ?", (row['id'],)
-        ).fetchall()
+        tags, channel_types, sms_senders = _provider_info(row['id'])
         prompt_data = json.loads(row['prompt']) if row['prompt'] else None
         result.append({
             'id':            row['id'],
@@ -294,7 +319,9 @@ def list_configs():
             'activated':     None,
             'prompt':        prompt_data,
             'is_owned':      False,
-            'provider_tags': [t['tag'] for t in tags],
+            'provider_tags': tags,
+            'channel_types': channel_types,
+            'sms_senders':   sms_senders,
         })
 
     return jsonify(result), 200
@@ -378,6 +405,131 @@ def report_client_test(config_id: int):
         (config_id,)
     )
     db.commit()
+    return '', 204
+
+
+@app.post('/api/configs/<int:config_id>/activate')
+@require_auth
+def api_config_activate(config_id: int):
+    db  = get_db()
+    cur = db.execute(
+        "UPDATE configurations "
+        "SET activated=1, updated_at=datetime('now') "
+        "WHERE id=? AND owner_id=? AND visibility='private' "
+        "  AND status IN ('valid', 'valid_tested')",
+        (config_id, g.user_id)
+    )
+    if cur.rowcount == 0:
+        return jsonify({'error': 'Not found or not activatable'}), 404
+    db.commit()
+    return '', 204
+
+
+@app.post('/api/configs/<int:config_id>/deactivate')
+@require_auth
+def api_config_deactivate(config_id: int):
+    db  = get_db()
+    cur = db.execute(
+        "UPDATE configurations "
+        "SET activated=0, updated_at=datetime('now') "
+        "WHERE id=? AND owner_id=? AND visibility='private'",
+        (config_id, g.user_id)
+    )
+    if cur.rowcount == 0:
+        return jsonify({'error': 'Not found'}), 404
+    db.commit()
+    return '', 204
+
+
+@app.delete('/api/subscriptions/<int:config_id>')
+@require_auth
+def api_unsubscribe(config_id: int):
+    db  = get_db()
+    cur = db.execute(
+        "DELETE FROM subscriptions WHERE user_id=? AND config_id=?",
+        (g.user_id, config_id)
+    )
+    if cur.rowcount == 0:
+        return jsonify({'error': 'Subscription not found'}), 404
+    db.commit()
+    return '', 204
+
+
+@app.post('/api/sms/ingest')
+@require_auth
+def sms_ingest():
+    from ingest import match_sms_provider, extract_nonce, archive_sms
+
+    data        = request.get_json(silent=True) or {}
+    sender      = (data.get('sender') or '').strip()
+    body        = data.get('body') or ''
+    received_at = (data.get('received_at') or '').strip()
+    config_id   = data.get('config_id')   # optional manual override
+
+    if not sender or not received_at:
+        return jsonify({'error': 'sender and received_at are required'}), 400
+
+    db           = get_db()
+    archive_root = cfg('paths', 'archive_path',
+                       fallback='/opt/noncey/daemon/var/archive')
+    lifetime_h   = float(cfg('general', 'nonce_lifetime_h', fallback='2'))
+
+    db_conn = db  # Flask's get_db() returns a sqlite3.Connection
+
+    # ── Resolve provider ──────────────────────────────────────────────────────
+    provider = None
+    if config_id:
+        # Manual funnel: use the provider attached to the specified config
+        provider = db_conn.execute(
+            "SELECT p.id, p.config_id, p.extract_mode, "
+            "       p.nonce_start_marker, p.nonce_end_marker, p.nonce_length "
+            "FROM   providers p "
+            "LEFT JOIN configurations c ON c.id = p.config_id "
+            "WHERE  p.config_id = ? AND p.channel_type = 'sms' "
+            "  AND (c.owner_id = ? "
+            "       OR EXISTS (SELECT 1 FROM subscriptions s "
+            "                  WHERE s.user_id = ? AND s.config_id = c.id))",
+            (config_id, g.user_id, g.user_id)
+        ).fetchone()
+    else:
+        provider = match_sms_provider(db_conn, g.user_id, sender)
+
+    # ── Archive ───────────────────────────────────────────────────────────────
+    username = db_conn.execute(
+        "SELECT username FROM users WHERE id=?", (g.user_id,)
+    ).fetchone()['username']
+    archive_sms(archive_root, username, sender, body, received_at)
+
+    # ── Match or unmatched ────────────────────────────────────────────────────
+    if provider:
+        nonce = extract_nonce(
+            body,
+            provider['extract_mode']       or 'auto',
+            provider['nonce_start_marker'] or '',
+            provider['nonce_end_marker'],
+            provider['nonce_length'],
+        )
+        if nonce:
+            now        = datetime.now(timezone.utc)
+            expires_at = now + timedelta(hours=lifetime_h)
+            db_conn.execute(
+                "INSERT INTO nonces "
+                "  (user_id, provider_id, nonce_value, received_at, expires_at) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (g.user_id, provider['id'], nonce,
+                 received_at, expires_at.isoformat())
+            )
+            db_conn.commit()
+            return '', 204
+
+    # No match or extraction failed — store as unmatched
+    db_conn.execute(
+        "INSERT INTO unmatched_items "
+        "  (user_id, channel_type, sender, body_text, received_at) "
+        "VALUES (?, 'sms', ?, ?, ?)",
+        (g.user_id, sender, body, received_at)
+    )
+    db_conn.commit()
     return '', 204
 
 

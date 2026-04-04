@@ -227,7 +227,7 @@ def dashboard():
     db      = get_db()
 
     unmatched_count = db.execute(
-        "SELECT COUNT(*) FROM unmatched_emails WHERE user_id=?", (user_id,)
+        "SELECT COUNT(*) FROM unmatched_items WHERE user_id=?", (user_id,)
     ).fetchone()[0]
 
     # Own private configurations
@@ -485,9 +485,13 @@ def _render_provider_form(config, provider, matchers, sample_sender):
 
 def _process_provider_form(request, config, provider, db):
     """Parse and validate the provider form. Returns (ok, fields_dict, error_html)."""
-    tag    = request.form.get('tag', '').strip()
+    tag          = request.form.get('tag', '').strip()
+    channel_type = request.form.get('channel_type', 'email')
+    if channel_type not in ('email', 'sms'):
+        channel_type = 'email'
+    # For SMS channels extract_source is always body; ignore the form value.
+    source = 'body' if channel_type == 'sms' else request.form.get('extract_source', 'body')
     mode   = request.form.get('extract_mode', 'auto')
-    source = request.form.get('extract_source', 'body')
     end    = request.form.get('nonce_end_marker', '').strip() or None
     sample = request.form.get('sample_email', '').strip() or None
     try:
@@ -504,7 +508,7 @@ def _process_provider_form(request, config, provider, db):
         derive_from = src_m.group(1) if (source == 'subject' and src_m) else sample_text
         start, length = _derive_auto_markers(derive_from, example_otp)
         if not start:
-            return False, None, 'Example OTP not found in the sample email text.'
+            return False, None, 'Example OTP not found in the sample text.'
     else:
         start = request.form.get('nonce_start_marker', '').strip()
 
@@ -513,8 +517,8 @@ def _process_provider_form(request, config, provider, db):
     if mode != 'auto' and not start:
         return False, None, 'Start marker is required for this extraction mode.'
 
-    return True, dict(tag=tag, mode=mode, source=source, start=start,
-                      end=end, length=length, sample=sample), None
+    return True, dict(tag=tag, channel_type=channel_type, mode=mode, source=source,
+                      start=start, end=end, length=length, sample=sample), None
 
 
 @admin_bp.route('/configs/<int:config_id>/channels/new', methods=['GET', 'POST'])
@@ -539,10 +543,11 @@ def channel_new(config_id):
         try:
             db.execute(
                 "INSERT INTO providers "
-                "  (user_id, config_id, tag, extract_source, extract_mode, "
+                "  (user_id, config_id, tag, channel_type, extract_source, extract_mode, "
                 "   nonce_start_marker, nonce_end_marker, nonce_length, sample_email) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (user_id, config_id, fields['tag'], fields['source'], fields['mode'],
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (user_id, config_id, fields['tag'], fields['channel_type'],
+                 fields['source'], fields['mode'],
                  fields['start'], fields['end'], fields['length'], fields['sample'])
             )
             db.commit()
@@ -679,42 +684,64 @@ def matcher_new(config_id, provider_id):
         flash('Channel not found.', 'error')
         return redirect(url_for('admin.config_detail', config_id=config_id))
 
-    sender_mode = request.form.get('sender_mode', 'any')
-    if sender_mode == 'sample':
-        sample_text = provider['sample_email'] or ''
-        m = re.search(r'^From:\s*(.+)', sample_text, re.MULTILINE | re.IGNORECASE)
-        if m:
-            _, addr = parseaddr(m.group(1).strip())
-            sender = addr.lower() if addr else None
+    db = get_db()
+
+    if provider['channel_type'] == 'sms':
+        # SMS channel: only sender phone matters
+        sender_mode = request.form.get('sender_mode', 'sample')
+        if sender_mode == 'sample':
+            phone = provider['sample_email'] or ''   # sample_email reused as sample_body
+        elif sender_mode == 'custom':
+            phone = request.form.get('sender_custom', '').strip()
+        else:
+            phone = ''
+        phone = phone.strip() or None
+        if not phone:
+            flash('Sender phone number is required for an SMS matcher.', 'error')
+            return redirect(url_for('admin.channel_edit',
+                                    config_id=config_id, provider_id=provider_id))
+        db.execute(
+            "INSERT INTO provider_matchers (provider_id, sender_phone) VALUES (?, ?)",
+            (provider_id, phone)
+        )
+    else:
+        # Email channel
+        sender_mode = request.form.get('sender_mode', 'any')
+        if sender_mode == 'sample':
+            sample_text = provider['sample_email'] or ''
+            m = re.search(r'^From:\s*(.+)', sample_text, re.MULTILINE | re.IGNORECASE)
+            if m:
+                _, addr = parseaddr(m.group(1).strip())
+                sender = addr.lower() if addr else None
+            else:
+                sender = None
+        elif sender_mode == 'custom':
+            sender = request.form.get('sender_custom', '').strip().lower() or None
+        elif sender_mode == 'fwd':
+            sender = request.form.get('sender_fwd', '').strip().lower() or None
         else:
             sender = None
-    elif sender_mode == 'custom':
-        sender = request.form.get('sender_custom', '').strip().lower() or None
-    elif sender_mode == 'fwd':
-        sender = request.form.get('sender_fwd', '').strip().lower() or None
-    else:
-        sender = None
 
-    subject_mode = request.form.get('subject_mode', 'any')
-    if subject_mode == 'contains':
-        text    = request.form.get('subject_text', '').strip()
-        subject = re.escape(text) if text else None
-    elif subject_mode == 'regex':
-        subject = request.form.get('subject_regex', '').strip() or None
-    else:
-        subject = None
+        subject_mode = request.form.get('subject_mode', 'any')
+        if subject_mode == 'contains':
+            text    = request.form.get('subject_text', '').strip()
+            subject = re.escape(text) if text else None
+        elif subject_mode == 'regex':
+            subject = request.form.get('subject_regex', '').strip() or None
+        else:
+            subject = None
 
-    if not sender and not subject:
-        flash('At least one of sender or subject must be specified.', 'error')
-        return redirect(url_for('admin.channel_edit',
-                                config_id=config_id, provider_id=provider_id))
+        if not sender and not subject:
+            flash('At least one of sender or subject must be specified.', 'error')
+            return redirect(url_for('admin.channel_edit',
+                                    config_id=config_id, provider_id=provider_id))
 
-    db = get_db()
-    db.execute(
-        "INSERT INTO provider_matchers (provider_id, sender_email, subject_pattern) "
-        "VALUES (?, ?, ?)",
-        (provider_id, sender, subject)
-    )
+        db.execute(
+            "INSERT INTO provider_matchers (provider_id, sender_email, subject_pattern) "
+            "VALUES (?, ?, ?)",
+            (provider_id, sender, subject)
+        )
+
     _auto_update_status(db, config_id)
     db.commit()
     flash('Matcher added.', 'success')
@@ -746,8 +773,8 @@ def matcher_delete(config_id, provider_id, matcher_id):
 def unmatched_list():
     user_id = session['user_id']
     rows = get_db().execute(
-        "SELECT id, sender, subject, received_at "
-        "FROM   unmatched_emails "
+        "SELECT id, channel_type, sender, subject, received_at "
+        "FROM   unmatched_items "
         "WHERE  user_id=? "
         "ORDER  BY received_at DESC",
         (user_id,)
@@ -761,7 +788,7 @@ def unmatched_detail(email_id):
     user_id = session['user_id']
     db      = get_db()
     row     = db.execute(
-        "SELECT * FROM unmatched_emails WHERE id=? AND user_id=?",
+        "SELECT * FROM unmatched_items WHERE id=? AND user_id=?",
         (email_id, user_id)
     ).fetchone()
     if not row:
@@ -837,26 +864,42 @@ def unmatched_detail(email_id):
             else:
                 start = request.form.get('nonce_start_marker', '').strip()
 
-            # ── Sender ───────────────────────────────────────────────────────
-            sender_mode = request.form.get('sender_mode', 'any')
-            if sender_mode == 'sample':
-                sender = row['sender'] or None
-            elif sender_mode == 'fwd':
-                sender = row['fwd_sender'] or None
-            elif sender_mode == 'custom':
-                sender = request.form.get('sender_custom', '').strip().lower() or None
-            else:
-                sender = None
+            channel_type = row['channel_type']   # propagate from the unmatched item
 
-            # ── Subject ──────────────────────────────────────────────────────
-            subject_mode = request.form.get('subject_mode', 'any')
-            if subject_mode == 'contains':
-                text            = request.form.get('subject_text', '').strip()
-                subject_pattern = re.escape(text) if text else None
-            elif subject_mode == 'regex':
-                subject_pattern = request.form.get('subject_regex', '').strip() or None
-            else:
+            if channel_type == 'sms':
+                # ── SMS sender ────────────────────────────────────────────────
+                sender_mode = request.form.get('sender_mode', 'sample')
+                if sender_mode == 'sample':
+                    sender_phone = row['sender'] or None
+                elif sender_mode == 'custom':
+                    sender_phone = request.form.get('sender_custom', '').strip() or None
+                else:
+                    sender_phone = None
+                sender_email    = None
                 subject_pattern = None
+            else:
+                # ── Email sender ──────────────────────────────────────────────
+                sender_mode = request.form.get('sender_mode', 'any')
+                if sender_mode == 'sample':
+                    sender_email = row['sender'] or None
+                elif sender_mode == 'fwd':
+                    sender_email = row['fwd_sender'] or None
+                elif sender_mode == 'custom':
+                    sender_email = request.form.get('sender_custom', '').strip().lower() or None
+                else:
+                    sender_email = None
+
+                # ── Subject ───────────────────────────────────────────────────
+                subject_mode = request.form.get('subject_mode', 'any')
+                if subject_mode == 'contains':
+                    text            = request.form.get('subject_text', '').strip()
+                    subject_pattern = re.escape(text) if text else None
+                elif subject_mode == 'regex':
+                    subject_pattern = request.form.get('subject_regex', '').strip() or None
+                else:
+                    subject_pattern = None
+
+                sender_phone = None
 
             if not tag:
                 flash('Tag is required.', 'error')
@@ -870,18 +913,19 @@ def unmatched_detail(email_id):
             try:
                 db.execute(
                     "INSERT INTO providers "
-                    "  (user_id, config_id, tag, extract_source, extract_mode, "
+                    "  (user_id, config_id, tag, channel_type, extract_source, extract_mode, "
                     "   nonce_start_marker, nonce_end_marker, nonce_length) "
-                    "VALUES (?,?,?,?,?,?,?,?)",
-                    (user_id, config_id, tag, source, mode, start, end, length)
+                    "VALUES (?,?,?,?,?,?,?,?,?)",
+                    (user_id, config_id, tag, channel_type, source, mode, start, end, length)
                 )
                 provider_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
                 db.execute(
-                    "INSERT INTO provider_matchers (provider_id, sender_email, subject_pattern) "
-                    "VALUES (?,?,?)",
-                    (provider_id, sender, subject_pattern)
+                    "INSERT INTO provider_matchers "
+                    "  (provider_id, sender_email, subject_pattern, sender_phone) "
+                    "VALUES (?,?,?,?)",
+                    (provider_id, sender_email, subject_pattern, sender_phone)
                 )
-                db.execute("DELETE FROM unmatched_emails WHERE id=?", (email_id,))
+                db.execute("DELETE FROM unmatched_items WHERE id=?", (email_id,))
                 _auto_update_status(db, config_id)
                 db.commit()
             except sqlite3.IntegrityError:
@@ -901,10 +945,10 @@ def unmatched_detail(email_id):
 def unmatched_dismiss(email_id):
     user_id = session['user_id']
     db      = get_db()
-    db.execute("DELETE FROM unmatched_emails WHERE id=? AND user_id=?",
+    db.execute("DELETE FROM unmatched_items WHERE id=? AND user_id=?",
                (email_id, user_id))
     db.commit()
-    flash('Email dismissed.', 'success')
+    flash('Item dismissed.', 'success')
     return redirect(url_for('admin.unmatched_list'))
 
 
@@ -930,6 +974,14 @@ def marketplace_browse():
         ).fetchall()
     )
 
+    # Build channel_types_map: config_id → list of distinct channel types (e.g. ['email','sms'])
+    channel_types_map = {}
+    for c in configs:
+        rows = db.execute(
+            "SELECT DISTINCT channel_type FROM providers WHERE config_id=?", (c['id'],)
+        ).fetchall()
+        channel_types_map[c['id']] = [r['channel_type'] for r in rows]
+
     sub_data = {}
     if _is_admin(user_id):
         for c in configs:
@@ -944,6 +996,7 @@ def marketplace_browse():
     return render_template('admin/marketplace.html',
                            configs=configs,
                            subscribed=subscribed,
+                           channel_types_map=channel_types_map,
                            sub_data=sub_data)
 
 
@@ -1124,14 +1177,74 @@ def account_gmail_xml():
 @admin_bp.get('/admin/users')
 @admin_required
 def admin_users():
-    users = get_db().execute(
+    db    = get_db()
+    now   = datetime.now(timezone.utc).isoformat()
+    users = db.execute(
         "SELECT u.id, u.username, u.email, u.is_admin, u.created_at, "
         "       COUNT(DISTINCT c.id) AS config_count "
         "FROM users u "
         "LEFT JOIN configurations c ON c.owner_id = u.id AND c.visibility='private' "
         "GROUP BY u.id ORDER BY u.username"
     ).fetchall()
-    return render_template('admin/admin_users.html', users=users)
+    # session counts per user, grouped by client_type (active sessions only)
+    session_rows = db.execute(
+        "SELECT user_id, client_type, COUNT(*) AS cnt "
+        "FROM sessions WHERE expires_at > ? "
+        "GROUP BY user_id, client_type",
+        (now,)
+    ).fetchall()
+    # build dict: {user_id: {'chrome': n, 'android': n, 'browser': n, 'total': n}}
+    session_map = {}
+    for r in session_rows:
+        uid  = r['user_id']
+        ctyp = r['client_type']
+        cnt  = r['cnt']
+        if uid not in session_map:
+            session_map[uid] = {'browser': 0, 'chrome': 0, 'android': 0, 'total': 0}
+        session_map[uid][ctyp] = cnt
+        session_map[uid]['total'] += cnt
+    return render_template('admin/admin_users.html', users=users, session_map=session_map)
+
+
+@admin_bp.get('/admin/users/<int:user_id>/sessions')
+@admin_required
+def admin_user_sessions(user_id):
+    db   = get_db()
+    user = db.execute("SELECT id, username FROM users WHERE id=?", (user_id,)).fetchone()
+    if not user:
+        flash('User not found.', 'error')
+        return redirect(url_for('admin.admin_users'))
+    now      = datetime.now(timezone.utc).isoformat()
+    sessions = db.execute(
+        "SELECT id, client_type, created_at, last_used_at, expires_at "
+        "FROM sessions WHERE user_id=? AND expires_at > ? "
+        "ORDER BY last_used_at DESC",
+        (user_id, now)
+    ).fetchall()
+    return render_template('admin/admin_user_sessions.html', user=user, sessions=sessions)
+
+
+@admin_bp.post('/admin/users/<int:user_id>/sessions/<int:session_id>/revoke')
+@admin_required
+def admin_user_session_revoke(user_id, session_id):
+    db = get_db()
+    db.execute(
+        "DELETE FROM sessions WHERE id=? AND user_id=?",
+        (session_id, user_id)
+    )
+    db.commit()
+    flash('Session revoked.', 'success')
+    return redirect(url_for('admin.admin_user_sessions', user_id=user_id))
+
+
+@admin_bp.post('/admin/users/<int:user_id>/sessions/revoke-all')
+@admin_required
+def admin_user_sessions_revoke_all(user_id):
+    db = get_db()
+    db.execute("DELETE FROM sessions WHERE user_id=?", (user_id,))
+    db.commit()
+    flash('All sessions revoked.', 'success')
+    return redirect(url_for('admin.admin_user_sessions', user_id=user_id))
 
 
 @admin_bp.route('/admin/users/new', methods=['GET', 'POST'])
@@ -1364,7 +1477,8 @@ def wizard_step1(config_id):
 
     unmatched = db.execute(
         "SELECT id, sender, fwd_sender, subject, received_at "
-        "FROM unmatched_emails WHERE user_id=? ORDER BY received_at DESC LIMIT 20",
+        "FROM unmatched_items WHERE user_id=? AND channel_type='email' "
+        "ORDER BY received_at DESC LIMIT 20",
         (user_id,)
     ).fetchall()
 
@@ -1385,7 +1499,7 @@ def wizard_step2(config_id, email_id):
 
     db    = get_db()
     email = db.execute(
-        "SELECT * FROM unmatched_emails WHERE id=? AND user_id=?",
+        "SELECT * FROM unmatched_items WHERE id=? AND user_id=? AND channel_type='email'",
         (email_id, user_id)
     ).fetchone()
     if not email:
@@ -1448,9 +1562,9 @@ def wizard_step2(config_id, email_id):
         try:
             db.execute(
                 "INSERT INTO providers "
-                "  (user_id, config_id, tag, extract_source, extract_mode, "
+                "  (user_id, config_id, tag, channel_type, extract_source, extract_mode, "
                 "   nonce_start_marker, nonce_end_marker, nonce_length) "
-                "VALUES (?,?,?,?,?,?,?,?)",
+                "VALUES (?,?,'email',?,?,?,?,?,?)",
                 (user_id, config_id, tag, source, mode, start, end, length)
             )
             provider_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
@@ -1459,7 +1573,7 @@ def wizard_step2(config_id, email_id):
                 "VALUES (?,?,?)",
                 (provider_id, sender, subject_pattern)
             )
-            db.execute("DELETE FROM unmatched_emails WHERE id=?", (email_id,))
+            db.execute("DELETE FROM unmatched_items WHERE id=?", (email_id,))
             _auto_update_status(db, config_id)
             db.commit()
         except sqlite3.IntegrityError:

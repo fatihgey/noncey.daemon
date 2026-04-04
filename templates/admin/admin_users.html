@@ -14,17 +14,37 @@
       <th>Email</th>
       <th>Admin</th>
       <th>Configs</th>
+      <th>Sessions</th>
       <th>Created</th>
       <th>Actions</th>
     </tr>
   </thead>
   <tbody>
     {% for u in users %}
+    {% set s = session_map.get(u.id, {}) %}
     <tr>
       <td><strong>{{ u.username }}</strong></td>
       <td>{{ u.email or '' }}</td>
       <td>{% if u.is_admin %}✓{% endif %}</td>
       <td>{{ u.config_count }}</td>
+      <td>
+        {% set total = s.get('total', 0) %}
+        {% if total %}
+          <a href="{{ url_for('admin.admin_user_sessions', user_id=u.id) }}" style="text-decoration:none;">
+            {% if s.get('browser', 0) %}
+              <span class="client-badge client-browser" title="Browser sessions">🌐 {{ s.get('browser') }}</span>
+            {% endif %}
+            {% if s.get('chrome', 0) %}
+              <span class="client-badge client-chrome" title="Chrome extension sessions">🔌 {{ s.get('chrome') }}</span>
+            {% endif %}
+            {% if s.get('android', 0) %}
+              <span class="client-badge client-android" title="Android app sessions">📱 {{ s.get('android') }}</span>
+            {% endif %}
+          </a>
+        {% else %}
+          <span style="color:#999;font-size:0.85rem;">none</span>
+        {% endif %}
+      </td>
       <td>{{ u.created_at[:10] }}</td>
       <td class="actions">
         <a class="btn" href="{{ url_for('admin.admin_user_edit', user_id=u.id) }}">Edit</a>
@@ -39,5 +59,18 @@
 {% else %}
 <p class="empty">No users.</p>
 {% endif %}
+
+<style>
+  .client-badge {
+    display: inline-block;
+    margin-right: 0.35rem;
+    padding: 0.1em 0.4em;
+    border-radius: 3px;
+    font-size: 0.82rem;
+    background: #e9ecef;
+    color: #333;
+    white-space: nowrap;
+  }
+</style>
 
 {% endblock %}

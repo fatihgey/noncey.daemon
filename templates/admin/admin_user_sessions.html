@@ -1,0 +1,75 @@
+{% extends 'admin/_base.html' %}
+{% block title %}noncey — sessions for {{ user.username }}{% endblock %}
+{% block content %}
+
+<h1>Sessions — {{ user.username }}</h1>
+
+<p style="margin-bottom:1rem;">
+  <a class="btn" href="{{ url_for('admin.admin_users') }}">← Back to users</a>
+  {% if sessions %}
+  <form method="post" action="{{ url_for('admin.admin_user_sessions_revoke_all', user_id=user.id) }}"
+        style="display:inline;margin-left:.5rem;"
+        onsubmit="return confirm('Revoke all sessions for {{ user.username }}?');">
+    <button class="btn btn-danger" type="submit">Revoke all</button>
+  </form>
+  {% endif %}
+</p>
+
+{% if sessions %}
+<table>
+  <thead>
+    <tr>
+      <th>Client</th>
+      <th>Created</th>
+      <th>Last used</th>
+      <th>Expires</th>
+      <th>Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for s in sessions %}
+    <tr>
+      <td>
+        {% if s.client_type == 'chrome' %}
+          <span class="client-badge client-chrome">🔌 Chrome extension</span>
+        {% elif s.client_type == 'android' %}
+          <span class="client-badge client-android">📱 Android app</span>
+        {% else %}
+          <span class="client-badge client-browser">🌐 Browser</span>
+        {% endif %}
+      </td>
+      <td>{{ s.created_at[:16].replace('T', ' ') }}</td>
+      <td>{{ s.last_used_at[:16].replace('T', ' ') }}</td>
+      <td>{{ s.expires_at[:10] }}</td>
+      <td class="actions">
+        <form method="post"
+              action="{{ url_for('admin.admin_user_session_revoke', user_id=user.id, session_id=s.id) }}"
+              style="display:inline;">
+          <button class="btn btn-danger btn-sm" type="submit">Revoke</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="empty">No active sessions.</p>
+{% endif %}
+
+<style>
+  .client-badge {
+    display: inline-block;
+    padding: 0.15em 0.55em;
+    border-radius: 3px;
+    font-size: 0.85rem;
+    background: #e9ecef;
+    color: #333;
+    white-space: nowrap;
+  }
+  .btn-sm {
+    padding: 0.25rem 0.6rem;
+    font-size: 0.82rem;
+  }
+</style>
+
+{% endblock %}
