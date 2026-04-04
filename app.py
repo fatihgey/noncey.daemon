@@ -38,6 +38,21 @@ import jwt
 from flask import Flask, g, jsonify, request
 
 from admin import admin_bp
+
+
+def _parse_dt(s: str) -> datetime:
+    """Parse an ISO-8601 datetime string tolerating Z suffix and variable fractional digits.
+
+    Python 3.10 fromisoformat rejects 'Z' and requires exactly 3 or 6 fractional digits.
+    Android's ISO_OFFSET_DATE_TIME emits 'Z' for UTC and trims trailing fractional zeros
+    (e.g. '2026-04-04T21:15:09.11Z').
+    """
+    s = s.replace('Z', '+00:00')
+    s = re.sub(r'\.(\d+)', lambda m: '.' + m.group(1).ljust(6, '0')[:6], s)
+    dt = datetime.fromisoformat(s)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
 from db import cfg, get_config, get_db
 from provision import ProvisionError, validate_username
 
@@ -214,9 +229,7 @@ def list_nonces():
 
     result = []
     for row in rows:
-        received_at = datetime.fromisoformat(row['received_at'])
-        if received_at.tzinfo is None:
-            received_at = received_at.replace(tzinfo=timezone.utc)
+        received_at = _parse_dt(row['received_at'])
         result.append({
             'id':                 row['id'],
             'provider_tag':       row['provider_tag'],
@@ -463,7 +476,11 @@ def sms_ingest():
     data        = request.get_json(silent=True) or {}
     sender      = (data.get('sender') or '').strip()
     body        = data.get('body') or ''
-    received_at = (data.get('received_at') or '').strip()
+    received_at_raw = (data.get('received_at') or '').strip()
+    try:
+        received_at = _parse_dt(received_at_raw).isoformat()
+    except (ValueError, AttributeError):
+        received_at = received_at_raw
     config_id   = data.get('config_id')   # optional manual override
 
     if not sender or not received_at:
