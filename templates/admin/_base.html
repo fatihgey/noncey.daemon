@@ -22,10 +22,12 @@
       padding: 0.6rem 1.25rem;
       flex-wrap: nowrap;
     }
-    nav .brand { font-weight: 700; color: #fff; text-decoration: none; margin-right: 0.75rem; font-size: 1.05rem; flex-shrink: 0; }
-    nav > a { color: #ccc; text-decoration: none; padding: 0.3rem 0.65rem; border-radius: 3px; font-size: 0.875rem; flex-shrink: 0; }
-    nav > a:hover { color: #fff; background: rgba(255,255,255,.12); }
-    nav .spacer { flex: 1; }
+    nav .brand { font-weight: 700; color: #fff; text-decoration: none; margin-right: 0.5rem; font-size: 1.05rem; flex-shrink: 0; }
+    .nav-center { flex: 1; display: flex; justify-content: center; align-items: center; gap: 0.25rem; }
+    .nav-center > a { color: #ccc; text-decoration: none; padding: 0.3rem 0.65rem; border-radius: 3px; font-size: 0.875rem; flex-shrink: 0; }
+    .nav-center > a:hover { color: #fff; background: rgba(255,255,255,.12); }
+    .nav-user { width: 160px; justify-content: flex-end; }
+    .nav-user .nav-dd-label { width: 100%; gap: 0.4rem; }
     /* dropdown */
     .nav-dd { position: relative; display: inline-flex; align-items: stretch; flex-shrink: 0; }
     .nav-dd-label {
@@ -89,8 +91,8 @@
     input[type=text]:focus, input[type=email]:focus,
     input[type=password]:focus, input[type=number]:focus,
     textarea:focus, select:focus {
-      outline: 2px solid #0066cc;
-      border-color: #0066cc;
+      outline: 2px solid #1a1a2e;
+      border-color: #1a1a2e;
     }
     textarea { height: 9rem; font-family: monospace; font-size: 0.85rem; resize: vertical; }
     .hint { font-size: 0.82rem; color: #666; margin: 0.2rem 0 0; }
@@ -108,8 +110,8 @@
       line-height: 1.4;
     }
     .btn:hover { background: #e8e8e8; }
-    .btn-primary { background: #0066cc; border-color: #0055aa; color: #fff; }
-    .btn-primary:hover { background: #0055aa; }
+    .btn-primary { background: #1a1a2e; border-color: #0e0e18; color: #fff; }
+    .btn-primary:hover { background: #0e0e18; }
     .btn-danger  { background: #c82333; border-color: #a71d2a; color: #fff; }
     .btn-danger:hover  { background: #a71d2a; }
     .btn-success { background: #28a745; border-color: #1e7e34; color: #fff; }
@@ -137,21 +139,27 @@
 {% if current_user %}
 <nav>
   <a class="brand" href="{{ url_for('admin.dashboard') }}">noncey</a>
-  <a href="{{ url_for('admin.dashboard') }}">Configurations</a>
-  <a href="{{ url_for('admin.marketplace_browse') }}">Marketplace</a>
-  <a href="{{ url_for('admin.unmatched_list') }}">Unmatched</a>
-  {% if user_is_admin %}
-  <div class="nav-dd">
-    <span class="nav-dd-label">Admin ▾</span>
-    <div class="nav-dd-menu">
-      <a href="{{ url_for('admin.admin_users') }}">Users</a>
-      <a href="{{ url_for('admin.admin_marketplace') }}">Review Queue</a>
+  <div class="nav-center">
+    <a href="{{ url_for('admin.dashboard') }}">Configurations</a>
+    <a href="{{ url_for('admin.marketplace_browse') }}">Marketplace</a>
+    <a href="{{ url_for('admin.unmatched_list') }}">Unmatched</a>
+    {% if user_is_admin %}
+    <div class="nav-dd">
+      <span class="nav-dd-label">Admin ▾</span>
+      <div class="nav-dd-menu">
+        <a href="{{ url_for('admin.admin_users') }}">Users</a>
+        <a href="{{ url_for('admin.admin_marketplace') }}">Review Queue</a>
+      </div>
     </div>
+    {% endif %}
   </div>
-  {% endif %}
-  <span class="spacer"></span>
-  <div class="nav-dd">
-    <span class="nav-dd-label">{{ current_user.username }} ▾</span>
+  {% set uname = current_user.username %}
+  {% set display_name = uname[:15] + '…' if uname|length > 18 else uname %}
+  <div class="nav-dd nav-user">
+    <span class="nav-dd-label">
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16"><path d="M3 14s-1 0-1-1 1-4 6-4 6 3 6 4-1 1-1 1zm5-6a3 3 0 1 0 0-6 3 3 0 0 0 0 6"/></svg>
+      {{ display_name }} ▾
+    </span>
     <div class="nav-dd-menu nav-dd-menu-r">
       <a href="{{ url_for('admin.account_password') }}">Settings</a>
       <form method="post" action="{{ url_for('admin.auth_logout') }}">
