@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- noncey favicon SVG — modern browsers prefer this over .ico -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <defs>
+    <filter id="s" x="-12%" y="-18%" width="130%" height="145%">
+      <feDropShadow dx="0" dy="1.5" stdDeviation="2.5"
+                    flood-color="#000" flood-opacity="0.16"/>
+    </filter>
+  </defs>
+  <rect x="8" y="22" width="84" height="56" rx="10"
+        fill="#fff" stroke="#d8d8e8" stroke-width="1.2" filter="url(#s)"/>
+  <g stroke="#1a1a2e" stroke-width="2.8" stroke-linecap="round" fill="none">
+    <line x1="27" y1="42" x2="27" y2="58"/>
+    <line x1="20.07" y1="46" x2="33.93" y2="54"/>
+    <line x1="20.07" y1="54" x2="33.93" y2="46"/>
+    <line x1="47" y1="42" x2="47" y2="58"/>
+    <line x1="40.07" y1="46" x2="53.93" y2="54"/>
+    <line x1="40.07" y1="54" x2="53.93" y2="46"/>
+    <line x1="67" y1="42" x2="67" y2="58"/>
+    <line x1="60.07" y1="46" x2="73.93" y2="54"/>
+    <line x1="60.07" y1="54" x2="73.93" y2="46"/>
+  </g>
+  <rect x="77" y="34" width="3.5" height="32" rx="1.75" fill="#1a1a2e"/>
+</svg>
