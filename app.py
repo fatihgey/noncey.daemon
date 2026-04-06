@@ -285,26 +285,31 @@ def list_configs():
     result = []
 
     def _provider_info(config_id):
-        """Return (tags, channel_types, sms_senders) for a config."""
+        """Return (tags, channel_types, sms_matchers) for a config."""
         providers = db.execute(
             "SELECT id, tag, channel_type FROM providers WHERE config_id = ?",
             (config_id,)
         ).fetchall()
         tags          = [p['tag']          for p in providers]
         channel_types = [p['channel_type'] for p in providers]
-        sms_senders   = []
+        sms_matchers  = []
         for p in providers:
             if p['channel_type'] == 'sms':
                 rows = db.execute(
-                    "SELECT sender_phone FROM provider_matchers "
-                    "WHERE  provider_id = ? AND sender_phone IS NOT NULL",
+                    "SELECT sender_phone, body_pattern, body_match_type "
+                    "FROM provider_matchers WHERE provider_id = ?",
                     (p['id'],)
                 ).fetchall()
-                sms_senders.extend(r['sender_phone'] for r in rows)
-        return tags, channel_types, sms_senders
+                for r in rows:
+                    sms_matchers.append({
+                        'sender_phone':    r['sender_phone'],
+                        'body_pattern':    r['body_pattern'],
+                        'body_match_type': r['body_match_type'],
+                    })
+        return tags, channel_types, sms_matchers
 
     for row in own_rows:
-        tags, channel_types, sms_senders = _provider_info(row['id'])
+        tags, channel_types, sms_matchers = _provider_info(row['id'])
         prompt_data = json.loads(row['prompt']) if row['prompt'] else None
         result.append({
             'id':            row['id'],
@@ -317,11 +322,11 @@ def list_configs():
             'is_owned':      True,
             'provider_tags': tags,
             'channel_types': channel_types,
-            'sms_senders':   sms_senders,
+            'sms_matchers':  sms_matchers,
         })
 
     for row in sub_rows:
-        tags, channel_types, sms_senders = _provider_info(row['id'])
+        tags, channel_types, sms_matchers = _provider_info(row['id'])
         prompt_data = json.loads(row['prompt']) if row['prompt'] else None
         result.append({
             'id':            row['id'],
@@ -334,7 +339,7 @@ def list_configs():
             'is_owned':      False,
             'provider_tags': tags,
             'channel_types': channel_types,
-            'sms_senders':   sms_senders,
+            'sms_matchers':  sms_matchers,
         })
 
     return jsonify(result), 200
