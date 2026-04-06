@@ -17,6 +17,7 @@ from flask import (Blueprint, Response, flash, jsonify, redirect,
                    render_template, request, session, url_for)
 
 from db import cfg, get_db
+from ingest import extract_nonce
 from provision import ProvisionError, validate_username
 
 admin_bp = Blueprint(
@@ -823,6 +824,19 @@ def unmatched_detail(email_id):
         (user_id,)
     ).fetchall()
 
+    existing_count = db.execute(
+        "SELECT COUNT(*) FROM providers WHERE user_id=? AND channel_type=?",
+        (user_id, row['channel_type'])
+    ).fetchone()[0]
+    type_label  = 'SMS' if row['channel_type'] == 'sms' else 'Email'
+    default_tag = type_label if existing_count == 0 else f"{type_label} #{existing_count + 1}"
+
+    def _render():
+        return render_template('admin/unmatched_detail.html',
+                               row=row, user_configs=user_configs,
+                               default_tag=default_tag,
+                               fd=request.form)
+
     if request.method == 'POST':
         action = request.form.get('action', '')
 
@@ -833,8 +847,7 @@ def unmatched_detail(email_id):
                 new_name = request.form.get('new_config_name', '').strip()
                 if not new_name:
                     flash('Configuration name is required.', 'error')
-                    return render_template('admin/unmatched_detail.html',
-                                           row=row, user_configs=user_configs)
+                    return _render()
                 try:
                     db.execute(
                         "INSERT INTO configurations (owner_id, name, version, status) VALUES (?,?,'-1','incomplete')",
@@ -843,18 +856,15 @@ def unmatched_detail(email_id):
                     config_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
                 except sqlite3.IntegrityError:
                     flash(f"A configuration named '{new_name}' already exists.", 'error')
-                    return render_template('admin/unmatched_detail.html',
-                                           row=row, user_configs=user_configs)
+                    return _render()
             elif config_choice:
                 config_id = int(config_choice)
                 if not _get_config(config_id, user_id):
                     flash('Configuration not found.', 'error')
-                    return render_template('admin/unmatched_detail.html',
-                                           row=row, user_configs=user_configs)
+                    return _render()
             else:
                 flash('Select or create a target configuration.', 'error')
-                return render_template('admin/unmatched_detail.html',
-                                       row=row, user_configs=user_configs)
+                return _render()
 
             # ── Extraction settings ───────────────────────────────────────────
             tag    = request.form.get('tag', '').strip()
@@ -870,14 +880,12 @@ def unmatched_detail(email_id):
                 example_otp = request.form.get('example_otp', '').strip()
                 if not example_otp:
                     flash('Example OTP is required for auto extraction mode.', 'error')
-                    return render_template('admin/unmatched_detail.html',
-                                           row=row, user_configs=user_configs)
+                    return _render()
                 derive_from = row['subject'] if source == 'subject' else (row['body_text'] or '')
                 start, length = _derive_auto_markers(derive_from, example_otp)
                 if not start:
                     flash('Example OTP not found in the email text.', 'error')
-                    return render_template('admin/unmatched_detail.html',
-                                           row=row, user_configs=user_configs)
+                    return _render()
             else:
                 start = (request.form.get('nonce_regex_pattern', '').strip()
                  if mode == 'regex'
@@ -910,8 +918,7 @@ def unmatched_detail(email_id):
 
                 if not sender_phone and not body_pattern:
                     flash('An SMS header requires a phone number, a body pattern, or both.', 'error')
-                    return render_template('admin/unmatched_detail.html',
-                                           row=row, user_configs=user_configs)
+                    return _render()
             else:
                 # ── Email sender ──────────────────────────────────────────────
                 sender_mode = request.form.get('sender_mode', 'any')
@@ -938,12 +945,10 @@ def unmatched_detail(email_id):
 
             if not tag:
                 flash('Tag is required.', 'error')
-                return render_template('admin/unmatched_detail.html',
-                                       row=row, user_configs=user_configs)
+                return _render()
             if mode != 'auto' and not start:
                 flash('Start marker is required for this extraction mode.', 'error')
-                return render_template('admin/unmatched_detail.html',
-                                       row=row, user_configs=user_configs)
+                return _render()
 
             try:
                 db.execute(
@@ -968,14 +973,55 @@ def unmatched_detail(email_id):
                 db.commit()
             except sqlite3.IntegrityError:
                 flash(f"Channel name '{tag}' already exists.", 'error')
-                return render_template('admin/unmatched_detail.html',
-                                       row=row, user_configs=user_configs)
+                return _render()
 
             flash(f"Channel '{tag}' created.", 'success')
             return redirect(url_for('admin.config_detail', config_id=config_id))
 
-    return render_template('admin/unmatched_detail.html',
-                           row=row, user_configs=user_configs)
+    return _render()
+
+
+@admin_bp.post('/unmatched/<int:email_id>/test-extract')
+@login_required
+def unmatched_test_extract(email_id):
+    """AJAX endpoint: run extraction against stored body using current form settings."""
+    user_id = session['user_id']
+    db      = get_db()
+    row     = db.execute(
+        "SELECT * FROM unmatched_items WHERE id=? AND user_id=?",
+        (email_id, user_id)
+    ).fetchone()
+    if not row:
+        return jsonify({'error': 'Not found'}), 404
+
+    mode   = request.form.get('extract_mode', 'auto')
+    source = request.form.get('extract_source', 'body')
+    text   = (row['subject'] or '') if source == 'subject' else (row['body_text'] or '')
+
+    if mode == 'auto':
+        example_otp = request.form.get('example_otp', '').strip()
+        if not example_otp:
+            return jsonify({'error': 'Example OTP required for auto mode'})
+        start, length = _derive_auto_markers(text, example_otp)
+        if not start:
+            return jsonify({'error': 'OTP not found in text'})
+        end = None
+    elif mode == 'regex':
+        start  = request.form.get('nonce_regex_pattern', '').strip()
+        end    = None
+        length = None
+    else:
+        start = request.form.get('nonce_start_marker', '').strip()
+        end   = request.form.get('nonce_end_marker', '').strip() or None
+        try:
+            length = int(request.form['nonce_length']) if request.form.get('nonce_length', '').strip() else None
+        except ValueError:
+            length = None
+
+    nonce = extract_nonce(text, mode, start or '', end, length)
+    if nonce:
+        return jsonify({'nonce': nonce})
+    return jsonify({'error': 'No match found'})
 
 
 @admin_bp.post('/unmatched/<int:email_id>/dismiss')
