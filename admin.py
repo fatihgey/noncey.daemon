@@ -1298,12 +1298,13 @@ def account_gmail_xml():
     # Include email channels from:
     #   (a) any config owned by this user — all statuses/activation states
     #   (b) any public config this user has subscribed to (provider owned by someone else)
-    senders = db.execute(
-        "SELECT DISTINCT pm.sender_email "
+    # Each distinct (sender_email, subject_pattern) pair becomes one filter entry.
+    matchers = db.execute(
+        "SELECT DISTINCT pm.sender_email, pm.subject_pattern "
         "FROM provider_matchers pm "
         "JOIN providers p ON p.id = pm.provider_id "
         "WHERE p.channel_type = 'email' "
-        "  AND pm.sender_email IS NOT NULL "
+        "  AND (pm.sender_email IS NOT NULL OR pm.subject_pattern IS NOT NULL) "
         "  AND ("
         "    p.user_id = ? "
         "    OR (p.config_id IS NOT NULL "
@@ -1321,13 +1322,18 @@ def account_gmail_xml():
     })
     ET.SubElement(feed, 'title').text = 'Mail Filters'
 
-    for row in senders:
-        sender = row['sender_email']
-        entry  = ET.SubElement(feed, 'entry')
+    for row in matchers:
+        sender  = row['sender_email']
+        subject = row['subject_pattern']
+        entry   = ET.SubElement(feed, 'entry')
         ET.SubElement(entry, 'category', term='filter')
         ET.SubElement(entry, 'title').text = 'Mail Filter'
-        ET.SubElement(entry, f'{{{APPS_NS}}}property',
-                      name='from', value=sender)
+        if sender:
+            ET.SubElement(entry, f'{{{APPS_NS}}}property',
+                          name='from', value=sender)
+        if subject:
+            ET.SubElement(entry, f'{{{APPS_NS}}}property',
+                          name='subject', value=subject)
         ET.SubElement(entry, f'{{{APPS_NS}}}property',
                       name='label', value='noncey')
         ET.SubElement(entry, f'{{{APPS_NS}}}property',
