@@ -303,7 +303,7 @@ def find_matching_provider(conn, user_id: int, sender_addr: str, subject: str):
         "       p.nonce_start_marker, p.nonce_end_marker, p.nonce_length "
         "FROM providers p "
         "LEFT JOIN configurations c ON c.id = p.config_id "
-        "WHERE p.user_id = ? "
+        "WHERE p.user_id = ? AND p.channel_type = 'email' "
         "  AND (p.config_id IS NULL "
         "       OR (c.visibility = 'private' AND c.activated = 1 "
         "           AND c.status IN ('valid', 'valid_tested')) "
