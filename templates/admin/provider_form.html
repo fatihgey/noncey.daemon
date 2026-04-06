@@ -409,9 +409,10 @@ function _computeTagDefault() {
 
 // ── Toggle email-source field and sample label based on channel type ──────────
 function updateChannelType() {
-  var radios = document.querySelectorAll('input[name=channel_type]');
   var isSms  = false;
-  radios.forEach(function(r) { if (r.checked && r.value === 'sms') isSms = true; });
+  document.querySelectorAll('input[name=channel_type]').forEach(function(r) {
+    if ((r.type === 'hidden' || r.checked) && r.value === 'sms') isSms = true;
+  });
 
   var srcField = document.getElementById('email-source-field');
   if (srcField) srcField.style.display = isSms ? 'none' : '';
