@@ -439,6 +439,7 @@ def config_submit(config_id):
 @admin_bp.get('/configs/<int:config_id>')
 @login_required
 def config_detail(config_id):
+    from datetime import datetime, timezone
     user_id = session['user_id']
     config  = _get_config(config_id, user_id) or _get_any_public_config(config_id)
     if not config:
@@ -449,11 +450,36 @@ def config_detail(config_id):
     providers, matchers = _providers_with_matchers(db, config_id)
     activatable = _config_activatable(providers, matchers)
 
+    raw_nonces = db.execute(
+        "SELECT n.nonce_value, n.received_at "
+        "FROM nonces n "
+        "JOIN providers p ON p.id = n.provider_id "
+        "WHERE p.config_id = ? "
+        "ORDER BY n.received_at DESC",
+        (config_id,)
+    ).fetchall()
+
+    now = datetime.now(timezone.utc)
+    nonce_rows = []
+    for n in raw_nonces:
+        received = datetime.fromisoformat(n['received_at'])
+        if received.tzinfo is None:
+            received = received.replace(tzinfo=timezone.utc)
+        age_s = int((now - received).total_seconds())
+        if age_s < 60:
+            age_str = f"{age_s}s ago"
+        elif age_s < 3600:
+            age_str = f"{age_s // 60}m ago"
+        else:
+            age_str = f"{age_s // 3600}h ago"
+        nonce_rows.append({'value': n['nonce_value'], 'age': age_str})
+
     return render_template('admin/config_detail.html',
                            config=config,
                            providers=providers,
                            matchers=matchers,
                            activatable=activatable,
+                           nonce_rows=nonce_rows,
                            source_config=None)
 
 
@@ -473,7 +499,7 @@ def config_clear_nonces(config_id):
         (config_id,)
     )
     db.commit()
-    return redirect(url_for('admin.dashboard'))
+    return redirect(url_for('admin.config_detail', config_id=config_id))
 
 
 # ── Provider management (config-scoped) ───────────────────────────────────────

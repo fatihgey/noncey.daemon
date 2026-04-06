@@ -155,6 +155,34 @@
 </p>
 {% endif %}
 
+{% if nonce_rows %}
+<hr>
+<div style="display:flex;align-items:center;gap:1rem;margin-bottom:.75rem;">
+  <h2 style="margin:0;">Waiting Codes</h2>
+  <form class="inline" method="post"
+        action="{{ url_for('admin.config_clear_nonces', config_id=config.id) }}">
+    <button class="btn btn-danger" type="submit"
+            style="font-size:.75rem;padding:.15rem .55rem;">Clear</button>
+  </form>
+</div>
+<table style="max-width:400px;">
+  <thead>
+    <tr>
+      <th>Code</th>
+      <th>Age</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for n in nonce_rows %}
+    <tr>
+      <td><code>{{ n.value }}</code></td>
+      <td style="color:#555;">{{ n.age }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
 <hr>
 <div style="display:flex;gap:.5rem;align-items:center;">
   <a class="btn" href="{{ url_for('admin.dashboard') }}">← Back</a>
