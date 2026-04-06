@@ -1224,7 +1224,7 @@ def marketplace_subscribe(src_config_id):
     )
     db.commit()
     flash(f"Subscribed to '{src['name']}' {src['version']}.", 'success')
-    return redirect(url_for('admin.dashboard'))
+    return redirect(url_for('admin.marketplace_browse'))
 
 
 @admin_bp.post('/marketplace/<int:config_id>/unsubscribe')
