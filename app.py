@@ -63,6 +63,14 @@ app.secret_key = cfg('general', 'secret_key')   # also used for Flask session / 
 app.permanent_session_lifetime = timedelta(days=30)
 app.register_blueprint(admin_bp)
 
+try:
+    from version import DISPLAY_VERSION as _DISPLAY_VERSION
+except ImportError:
+    _DISPLAY_VERSION = 'dev'
+
+@app.context_processor
+def _inject_version():
+    return {'display_version': _DISPLAY_VERSION}
 
 # Jinja2 helper: {{ some_json_text | fromjson }}
 app.jinja_env.filters['fromjson'] = json.loads

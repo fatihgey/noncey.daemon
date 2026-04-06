@@ -17,6 +17,18 @@
       color: #222;
       margin: 0;
       background: #f8f8f8;
+      padding-bottom: 2.5rem;
+    }
+    .noncey-footer {
+      position: fixed;
+      bottom: 0; left: 0; right: 0;
+      text-align: center;
+      padding: 0.35rem 1rem;
+      font-size: 0.75rem;
+      color: #aaa;
+      background: #f0f0f0;
+      border-top: 1px solid #e0e0e0;
+      z-index: 100;
     }
     a { color: #0066cc; }
     nav {
@@ -195,5 +207,6 @@
   {% block content %}{% endblock %}
 </div>
 
+<footer class="noncey-footer">noncey daemon v{{ display_version }}</footer>
 </body>
 </html>

@@ -22,6 +22,14 @@ CONF="${1:-/opt/noncey/daemon/etc/noncey.conf}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SOURCE_DIR="${SCRIPT_DIR}"
 
+# ── Version ────────────────────────────────────────────────────────────────────
+FORMAL_VERSION=$(git -C "${SCRIPT_DIR}" describe --tags --abbrev=0 2>/dev/null \
+    | sed 's/^v//' || true)
+[[ -n "${FORMAL_VERSION}" ]] || FORMAL_VERSION="1.0.0"
+GIT_HASH=$(git -C "${SCRIPT_DIR}" rev-parse --short HEAD 2>/dev/null || true)
+[[ -n "${GIT_HASH}" ]] || GIT_HASH="unknown"
+DISPLAY_VERSION="${FORMAL_VERSION}+${GIT_HASH}"
+
 # ── Output helpers ─────────────────────────────────────────────────────────────
 BOLD='\033[1m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; NC='\033[0m'
 _step=0
@@ -176,6 +184,13 @@ chown -R root:root    "${INSTALL_DIR}"
 chown -R noncey:noncey "${VAR_DIR}"
 chown    root:noncey   "${ETC_DIR}"      "$CONF"
 ok "Files copied."
+
+# Write version.py (generated from git; not stored in source tree)
+printf 'FORMAL_VERSION  = "%s"\nDISPLAY_VERSION = "%s"\n' \
+    "${FORMAL_VERSION}" "${DISPLAY_VERSION}" > "${INSTALL_DIR}/version.py"
+chown root:root "${INSTALL_DIR}/version.py"
+chmod 644       "${INSTALL_DIR}/version.py"
+ok "Version: ${DISPLAY_VERSION}"
 
 # =============================================================================
 step "Python virtualenv  +  pip install"
