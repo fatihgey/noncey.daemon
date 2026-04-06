@@ -416,10 +416,10 @@ def report_client_test(config_id: int):
     if cur.rowcount == 0:
         return jsonify({'error': 'Not found'}), 404
 
-    # Advance to valid_tested once 3 successful fills reported
+    # Advance to valid_tested once 3 successful fills reported (private configs only)
     db.execute(
         "UPDATE configurations SET status = 'valid_tested', updated_at = datetime('now') "
-        "WHERE id = ? AND status = 'valid' AND client_test_count >= 3",
+        "WHERE id = ? AND status = 'valid' AND client_test_count >= 3 AND visibility = 'private'",
         (config_id,)
     )
     db.commit()

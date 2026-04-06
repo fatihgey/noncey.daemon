@@ -1160,7 +1160,7 @@ def marketplace_browse():
         "SELECT c.*, u.username AS owner_name "
         "FROM configurations c "
         "JOIN users u ON u.id = c.owner_id "
-        "WHERE c.visibility='public' AND c.status='valid' "
+        "WHERE c.visibility='public' AND c.status IN ('valid', 'valid_tested') "
         "ORDER BY c.name, c.version DESC",
     ).fetchall()
 
