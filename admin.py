@@ -156,9 +156,9 @@ def _auto_update_status(db, config_id: int):
       pending_review: untouched      (locked during review)
     """
     config = db.execute(
-        "SELECT status, prompt FROM configurations WHERE id=?", (config_id,)
+        "SELECT status, visibility, prompt FROM configurations WHERE id=?", (config_id,)
     ).fetchone()
-    if not config or config['status'] == 'pending_review':
+    if not config or config['status'] == 'pending_review' or config['visibility'] == 'public':
         return
 
     providers = db.execute(
