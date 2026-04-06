@@ -1295,18 +1295,21 @@ def account_gmail_xml():
     domain   = cfg('general', 'domain', fallback='nonces.example.com')
     forward_to = f"nonce-{username}@{domain}"
 
+    # Include email channels from:
+    #   (a) any config owned by this user — all statuses/activation states
+    #   (b) any public config this user has subscribed to (provider owned by someone else)
     senders = db.execute(
         "SELECT DISTINCT pm.sender_email "
         "FROM provider_matchers pm "
         "JOIN providers p ON p.id = pm.provider_id "
-        "LEFT JOIN configurations c ON c.id = p.config_id "
-        "WHERE p.user_id=? AND pm.sender_email IS NOT NULL "
-        "  AND (p.config_id IS NULL "
-        "       OR (c.visibility='private' AND c.activated=1 "
-        "           AND c.status IN ('valid','valid_tested')) "
-        "       OR (c.visibility='public' "
-        "           AND EXISTS (SELECT 1 FROM subscriptions s "
-        "                       WHERE s.user_id=? AND s.config_id=c.id)))",
+        "WHERE p.channel_type = 'email' "
+        "  AND pm.sender_email IS NOT NULL "
+        "  AND ("
+        "    p.user_id = ? "
+        "    OR (p.config_id IS NOT NULL "
+        "        AND EXISTS (SELECT 1 FROM subscriptions s "
+        "                    WHERE s.user_id = ? AND s.config_id = p.config_id))"
+        "  )",
         (user_id, user_id)
     ).fetchall()
 
