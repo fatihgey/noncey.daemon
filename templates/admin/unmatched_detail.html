@@ -370,11 +370,27 @@ fieldset.form-group > legend {
 </style>
 
 <script>
-// Show/hide new-config fields
+// Per-config channel counts for default tag updates
+var _configCounts = {{ config_channel_counts | tojson }};
+var _typeLabel    = {{ type_label | tojson }};
+var _tagInput     = document.getElementById('tag');
+var _tagDefault   = _tagInput.value;  // server-computed initial default
+
+function _computeTagDefault(configVal) {
+  var n = (configVal === 'new' || !configVal) ? 0 : (_configCounts[parseInt(configVal)] || 0);
+  return n === 0 ? _typeLabel : _typeLabel + ' #' + (n + 1);
+}
+
+// Show/hide new-config fields; update default tag when config selection changes
 document.querySelectorAll('input[name=config_choice]').forEach(function(r) {
   r.addEventListener('change', function() {
     document.getElementById('new-config-fields').style.display =
       (this.value === 'new') ? '' : 'none';
+    var newDefault = _computeTagDefault(this.value);
+    if (_tagInput.value === _tagDefault) {
+      _tagInput.value = newDefault;
+    }
+    _tagDefault = newDefault;
   });
 });
 

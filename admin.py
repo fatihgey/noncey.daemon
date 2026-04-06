@@ -478,10 +478,12 @@ def config_clear_nonces(config_id):
 
 # ── Provider management (config-scoped) ───────────────────────────────────────
 
-def _render_provider_form(config, provider, matchers, sample_sender):
+def _render_provider_form(config, provider, matchers, sample_sender,
+                          fd=None, email_count=0, sms_count=0):
     return render_template('admin/provider_form.html',
                            config=config, provider=provider,
-                           matchers=matchers, sample_sender=sample_sender)
+                           matchers=matchers, sample_sender=sample_sender,
+                           fd=fd or {}, email_count=email_count, sms_count=sms_count)
 
 
 def _process_provider_form(request, config, provider, db):
@@ -536,13 +538,27 @@ def channel_new(config_id):
         flash('Channels of a public configuration cannot be edited.', 'error')
         return redirect(url_for('admin.config_detail', config_id=config_id))
 
+    db = get_db()
+    email_count = db.execute(
+        "SELECT COUNT(*) FROM providers WHERE config_id=? AND channel_type='email'",
+        (config_id,)
+    ).fetchone()[0]
+    sms_count = db.execute(
+        "SELECT COUNT(*) FROM providers WHERE config_id=? AND channel_type='sms'",
+        (config_id,)
+    ).fetchone()[0]
+
+    def _render_err():
+        return _render_provider_form(config, None, [], None,
+                                     fd=request.form,
+                                     email_count=email_count, sms_count=sms_count)
+
     if request.method == 'POST':
-        ok, fields, err = _process_provider_form(request, config, None, get_db())
+        ok, fields, err = _process_provider_form(request, config, None, db)
         if not ok:
             flash(err, 'error')
-            return _render_provider_form(config, None, [], None)
+            return _render_err()
 
-        db = get_db()
         try:
             db.execute(
                 "INSERT INTO providers "
@@ -556,14 +572,59 @@ def channel_new(config_id):
             db.commit()
         except sqlite3.IntegrityError:
             flash(f"Channel tag '{fields['tag']}' already exists.", 'error')
-            return _render_provider_form(config, None, [], None)
+            return _render_err()
 
         _auto_update_status(db, config_id)
         db.commit()
         flash(f"Channel '{fields['tag']}' created.", 'success')
         return redirect(url_for('admin.config_detail', config_id=config_id))
 
-    return _render_provider_form(config, None, [], None)
+    return _render_provider_form(config, None, [], None,
+                                 fd={}, email_count=email_count, sms_count=sms_count)
+
+
+@admin_bp.post('/configs/<int:config_id>/channels/test-extract')
+@login_required
+def channel_test_extract(config_id):
+    """AJAX: test extraction against sample_email content using current form settings."""
+    user_id = session['user_id']
+    if not _get_config(config_id, user_id):
+        return jsonify({'error': 'Not found'}), 404
+
+    mode   = request.form.get('extract_mode', 'auto')
+    source = request.form.get('extract_source', 'body')
+    sample = request.form.get('sample_email', '').strip()
+
+    if source == 'subject':
+        m = re.search(r'^Subject:\s*(.+)', sample, re.MULTILINE | re.IGNORECASE)
+        text = m.group(1).strip() if m else ''
+    else:
+        text = sample
+
+    if mode == 'auto':
+        example_otp = request.form.get('example_otp', '').strip()
+        if not example_otp:
+            return jsonify({'error': 'Example OTP required for auto mode'})
+        start, length = _derive_auto_markers(text, example_otp)
+        if not start:
+            return jsonify({'error': 'OTP not found in sample'})
+        end = None
+    elif mode == 'regex':
+        start  = request.form.get('nonce_regex_pattern', '').strip()
+        end    = None
+        length = None
+    else:
+        start = request.form.get('nonce_start_marker', '').strip()
+        end   = request.form.get('nonce_end_marker', '').strip() or None
+        try:
+            length = int(request.form['nonce_length']) if request.form.get('nonce_length', '').strip() else None
+        except ValueError:
+            length = None
+
+    nonce = extract_nonce(text, mode, start or '', end, length)
+    if nonce:
+        return jsonify({'nonce': nonce})
+    return jsonify({'error': 'No match found'})
 
 
 @admin_bp.get('/configs/<int:config_id>/channels/<int:provider_id>')
@@ -824,17 +885,42 @@ def unmatched_detail(email_id):
         (user_id,)
     ).fetchall()
 
-    existing_count = db.execute(
-        "SELECT COUNT(*) FROM providers WHERE user_id=? AND channel_type=?",
-        (user_id, row['channel_type'])
-    ).fetchone()[0]
-    type_label  = 'SMS' if row['channel_type'] == 'sms' else 'Email'
-    default_tag = type_label if existing_count == 0 else f"{type_label} #{existing_count + 1}"
+    type_label = 'SMS' if row['channel_type'] == 'sms' else 'Email'
+
+    # Count existing channels of this type per config (for per-config default tag).
+    config_channel_counts = {}
+    for c in user_configs:
+        n = db.execute(
+            "SELECT COUNT(*) FROM providers WHERE config_id=? AND channel_type=?",
+            (c['id'], row['channel_type'])
+        ).fetchone()[0]
+        config_channel_counts[c['id']] = n
+
+    def _default_tag_for(config_choice):
+        """Return the default tag string for the given config_choice value."""
+        if config_choice == 'new' or not config_choice:
+            n = 0
+        else:
+            try:
+                n = config_channel_counts.get(int(config_choice), 0)
+            except ValueError:
+                n = 0
+        return type_label if n == 0 else f"{type_label} #{n + 1}"
+
+    # Determine which config is "selected" for the server-side default_tag:
+    # on POST (error re-render) use the submitted choice; on GET use first config.
+    if request.method == 'POST':
+        sel = request.form.get('config_choice', '')
+    else:
+        sel = str(user_configs[0]['id']) if user_configs else 'new'
+    default_tag = _default_tag_for(sel)
 
     def _render():
         return render_template('admin/unmatched_detail.html',
                                row=row, user_configs=user_configs,
                                default_tag=default_tag,
+                               config_channel_counts=config_channel_counts,
+                               type_label=type_label,
                                fd=request.form)
 
     if request.method == 'POST':

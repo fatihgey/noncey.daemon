@@ -4,13 +4,23 @@
 
 {% set is_sms = (provider and provider.channel_type == 'sms') %}
 
+{# For new channel: compute initial default tag and current channel type from fd #}
+{% if not provider %}
+{% set sel_ct      = fd.get('channel_type', 'email') %}
+{% set ct_count    = sms_count if sel_ct == 'sms' else email_count %}
+{% set default_tag = ('SMS' if sel_ct == 'sms' else 'Email') if ct_count == 0
+                     else ('SMS' if sel_ct == 'sms' else 'Email') + ' #' + (ct_count + 1)|string %}
+{% set sel_mode    = fd.get('extract_mode', 'auto') %}
+{% set sel_source  = fd.get('extract_source', 'body') %}
+{% endif %}
+
 <h1>
   {% if provider %}Edit channel — {{ provider.tag }}
   {% else %}New channel — {{ config.name }}
   {% endif %}
 </h1>
 
-<form method="post" style="max-width: 600px;">
+<form id="channel-form" method="post" style="max-width: 600px;">
 
   {% if provider %}
   {# Channel type is fixed once created; display read-only #}
@@ -29,11 +39,13 @@
   <div class="field">
     <label>Channel type</label>
     <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;margin-bottom:.35rem;">
-      <input type="radio" name="channel_type" value="email" checked
+      <input type="radio" name="channel_type" value="email"
+             {{ 'checked' if sel_ct == 'email' }}
              onchange="updateChannelType()"> Email
     </label>
     <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;">
       <input type="radio" name="channel_type" value="sms"
+             {{ 'checked' if sel_ct == 'sms' }}
              onchange="updateChannelType()"> SMS
     </label>
   </div>
@@ -42,108 +54,127 @@
   <div class="field">
     <label for="tag">Tag</label>
     <input type="text" id="tag" name="tag"
-           value="{{ provider.tag if provider else '' }}"
+           value="{{ provider.tag if provider else fd.get('tag', default_tag) }}"
            required autofocus autocomplete="off" spellcheck="false">
     <p class="hint">Short label used in the extension dropdown, e.g. <code>github</code>, <code>bank-otp</code>.</p>
   </div>
 
-  <div id="email-source-field" class="field">
-    <label>Extract from</label>
-    {% set cur_src = provider.extract_source if provider else 'body' %}
-    <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;margin-bottom:.35rem;">
-      <input type="radio" name="extract_source" value="body"
-             {{ 'checked' if cur_src != 'subject' }}> Email body
-    </label>
-    <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;">
-      <input type="radio" name="extract_source" value="subject"
-             {{ 'checked' if cur_src == 'subject' }}> Subject line
-    </label>
-  </div>
+  {# ── Extraction group ── #}
+  <fieldset class="form-group">
+    <legend>Extraction</legend>
 
-  <div class="field">
-    <label>Extraction mode</label>
-    {% set cur_mode = provider.extract_mode if provider else 'auto' %}
-    <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;margin-bottom:.35rem;">
-      <input type="radio" name="extract_mode" value="auto"
-             {{ 'checked' if cur_mode == 'auto' }}>
-      <span><strong>Auto</strong> — daemon detects the OTP automatically (no markers needed)</span>
-    </label>
-    <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;margin-bottom:.35rem;">
-      <input type="radio" name="extract_mode" value="markers"
-             {{ 'checked' if cur_mode == 'markers' }}>
-      <strong>Start + end marker</strong>
-    </label>
-    <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;margin-bottom:.35rem;">
-      <input type="radio" name="extract_mode" value="start_length"
-             {{ 'checked' if cur_mode == 'start_length' }}>
-      <strong>Start marker + fixed length</strong>
-    </label>
-    <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;">
-      <input type="radio" name="extract_mode" value="regex"
-             {{ 'checked' if cur_mode == 'regex' }}>
-      <strong>Regex</strong>
-    </label>
-  </div>
+    <div id="email-source-field" class="field">
+      <label>Extract from</label>
+      {% set cur_src = provider.extract_source if provider else sel_source %}
+      <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;margin-bottom:.35rem;">
+        <input type="radio" name="extract_source" value="body"
+               {{ 'checked' if cur_src != 'subject' }}> Email body
+      </label>
+      <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;">
+        <input type="radio" name="extract_source" value="subject"
+               {{ 'checked' if cur_src == 'subject' }}> Subject line
+      </label>
+    </div>
 
-  <div id="auto-field" class="field">
-    <label for="example_otp">Example OTP</label>
-    <input type="text" id="example_otp" name="example_otp"
-           autocomplete="off" spellcheck="false" placeholder="e.g. 482910">
-    <p class="hint">
-      Enter an OTP value from the sample above.
-      The daemon will derive the extraction pattern from it automatically.
-    </p>
-  </div>
+    <div class="field">
+      <label>Extraction mode</label>
+      {% set cur_mode = provider.extract_mode if provider else sel_mode %}
+      <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;margin-bottom:.35rem;">
+        <input type="radio" name="extract_mode" value="auto"
+               {{ 'checked' if cur_mode == 'auto' }}>
+        <span><strong>Auto</strong> — daemon detects the OTP automatically (no markers needed)</span>
+      </label>
+      <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;margin-bottom:.35rem;">
+        <input type="radio" name="extract_mode" value="markers"
+               {{ 'checked' if cur_mode == 'markers' }}>
+        <strong>Start + end marker</strong>
+      </label>
+      <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;margin-bottom:.35rem;">
+        <input type="radio" name="extract_mode" value="start_length"
+               {{ 'checked' if cur_mode == 'start_length' }}>
+        <strong>Start marker + fixed length</strong>
+      </label>
+      <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;">
+        <input type="radio" name="extract_mode" value="regex"
+               {{ 'checked' if cur_mode == 'regex' }}>
+        <strong>Regex</strong>
+      </label>
+    </div>
 
-  <div id="start-field" class="field">
-    <label for="nonce_start_marker">Start marker</label>
-    <input type="text" id="nonce_start_marker" name="nonce_start_marker"
-           value="{{ provider.nonce_start_marker if provider else '' }}"
-           autocomplete="off" spellcheck="false">
-    <p class="hint">Text immediately before the OTP in the source text.</p>
-  </div>
+    <div id="auto-field" class="field">
+      <label for="example_otp">Example OTP</label>
+      <input type="text" id="example_otp" name="example_otp"
+             value="{{ fd.get('example_otp', '') if not provider else '' }}"
+             autocomplete="off" spellcheck="false" placeholder="e.g. 482910">
+      <p class="hint">
+        Enter an OTP value from the sample above.
+        The daemon will derive the extraction pattern from it automatically.
+      </p>
+    </div>
 
-  <div id="end-field" class="field">
-    <label for="nonce_end_marker">End marker <small>(optional)</small></label>
-    <input type="text" id="nonce_end_marker" name="nonce_end_marker"
-           value="{{ provider.nonce_end_marker if provider else '' }}"
-           autocomplete="off" spellcheck="false">
-    <p class="hint">Text immediately after the OTP. Leave blank to read to end of line.</p>
-  </div>
+    <div id="start-field" class="field">
+      <label for="nonce_start_marker">Start marker</label>
+      <input type="text" id="nonce_start_marker" name="nonce_start_marker"
+             value="{{ provider.nonce_start_marker if provider else fd.get('nonce_start_marker', '') }}"
+             autocomplete="off" spellcheck="false">
+      <p class="hint">Text immediately before the OTP in the source text.</p>
+    </div>
 
-  <div id="length-field" class="field">
-    <label for="nonce_length">OTP length <small>(characters)</small></label>
-    <input type="number" id="nonce_length" name="nonce_length" min="1" max="20"
-           value="{{ provider.nonce_length if provider and provider.nonce_length else '' }}"
-           style="width:6rem;">
-    <p class="hint">Number of characters to read after the start marker.</p>
-  </div>
+    <div id="end-field" class="field">
+      <label for="nonce_end_marker">End marker <small>(optional)</small></label>
+      <input type="text" id="nonce_end_marker" name="nonce_end_marker"
+             value="{{ provider.nonce_end_marker if provider else fd.get('nonce_end_marker', '') }}"
+             autocomplete="off" spellcheck="false">
+      <p class="hint">Text immediately after the OTP. Leave blank to read to end of line.</p>
+    </div>
 
-  <div id="regex-field" class="field">
-    <label for="nonce_regex">Regex pattern</label>
-    <input type="text" id="nonce_regex" name="nonce_regex_pattern"
-           value="{{ provider.nonce_start_marker if provider and provider.extract_mode == 'regex' else '' }}"
-           autocomplete="off" spellcheck="false" style="font-family:monospace;">
-    <p class="hint">
-      Applied <strong>line by line</strong> — <code>\n</code> never appears in the input.<br>
-      Use a <strong>capturing group</strong> <code>( )</code> to mark the nonce within the match.
-      Without a group the entire match is used.<br>
-      Example: a line reading <code>Your code: 482910</code><br>
-      &nbsp;&nbsp;→ pattern <code>Your code:\s+(\d+)</code> captures <code>482910</code><br>
-      &nbsp;&nbsp;→ pattern <code>^(\d{4,9})$</code> captures a standalone digit-only line
-    </p>
-  </div>
+    <div id="length-field" class="field">
+      <label for="nonce_length">OTP length <small>(characters)</small></label>
+      <input type="number" id="nonce_length" name="nonce_length" min="1" max="20"
+             value="{{ provider.nonce_length if provider and provider.nonce_length else fd.get('nonce_length', '') }}"
+             style="width:6rem;">
+      <p class="hint">Number of characters to read after the start marker.</p>
+    </div>
 
-  <div id="sample-field" class="field">
-    <label for="sample_email" id="sample-label">Sample email <small>(optional)</small></label>
-    <textarea id="sample_email" name="sample_email"
-              spellcheck="false">{{ provider.sample_email if provider else '' }}</textarea>
-    <p class="hint" id="sample-hint">Paste a representative email for reference and sender detection.</p>
-  </div>
+    <div id="regex-field" class="field">
+      <label for="nonce_regex">Regex pattern</label>
+      <input type="text" id="nonce_regex" name="nonce_regex_pattern"
+             value="{{ provider.nonce_start_marker if provider and provider.extract_mode == 'regex' else fd.get('nonce_regex_pattern', '') }}"
+             autocomplete="off" spellcheck="false" style="font-family:monospace;">
+      <p class="hint">
+        Applied <strong>line by line</strong> — <code>\n</code> never appears in the input.<br>
+        Use a <strong>capturing group</strong> <code>( )</code> to mark the nonce within the match.
+        Without a group the entire match is used.<br>
+        Example: a line reading <code>Your code: 482910</code><br>
+        &nbsp;&nbsp;→ pattern <code>Your code:\s+(\d+)</code> captures <code>482910</code><br>
+        &nbsp;&nbsp;→ pattern <code>^(\d{4,9})$</code> captures a standalone digit-only line
+      </p>
+    </div>
 
-  <input class="btn btn-primary" type="submit"
-         value="{{ 'Save changes' if provider else 'Create channel' }}">
-  <a class="btn" href="{{ url_for('admin.config_detail', config_id=config.id) }}">Cancel</a>
+    <div id="sample-field" class="field">
+      <label for="sample_email" id="sample-label">Sample email <small>(optional)</small></label>
+      <textarea id="sample_email" name="sample_email"
+                spellcheck="false">{{ provider.sample_email if provider else fd.get('sample_email', '') }}</textarea>
+      <p class="hint" id="sample-hint">Paste a representative email for reference and sender detection.</p>
+    </div>
+
+    {# ── Test Extraction ── #}
+    <div class="field" style="margin-top:.25rem;">
+      <label>Test extraction</label>
+      <div style="display:flex;gap:.5rem;align-items:center;">
+        <button type="button" id="test-btn" class="btn" onclick="runTestExtraction()">Test config</button>
+        <input type="text" id="test-result" readonly placeholder="— result —"
+               style="flex:1;background:#f7f7f7;cursor:default;font-family:monospace;color:#155724;">
+      </div>
+      <p class="hint">Runs extraction against the sample above using the current form settings — before saving.</p>
+    </div>
+  </fieldset>
+
+  <div style="display:flex;gap:.5rem;flex-wrap:wrap;">
+    <input class="btn btn-primary" type="submit"
+           value="{{ 'Save changes' if provider else 'Create channel' }}">
+    <a class="btn" href="{{ url_for('admin.config_detail', config_id=config.id) }}">Cancel</a>
+  </div>
 </form>
 
 {# Headers section — only shown when editing an existing provider #}
@@ -220,7 +251,6 @@
 
   {% if is_sms %}
   {# ── SMS: top-level match_by radio → phone section OR body section ── #}
-  {# sender_mode hidden input is kept in sync by JS so the server needs no changes #}
   <input type="hidden" name="sender_mode" id="pf-sender-mode-val"
          value="{{ 'sample' if sample_sender else 'custom' }}">
 
@@ -238,7 +268,7 @@
     </label>
   </div>
 
-  {# ── Phone sub-section ── #}
+  {# Phone sub-section #}
   <div id="pf-phone-section" class="field" style="margin-left:1.5rem;">
     {% if sample_sender %}
     <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;margin-bottom:.35rem;">
@@ -263,7 +293,7 @@
     {% endif %}
   </div>
 
-  {# ── Body sub-section ── #}
+  {# Body sub-section #}
   <div id="pf-body-section" class="field" style="display:none;margin-left:1.5rem;">
     <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;margin-bottom:.35rem;">
       <input type="radio" name="body_mode" value="any" id="body-any-radio" checked>
@@ -287,7 +317,7 @@
   </div>
 
   {% else %}
-  {# ── Email: sender + subject ── #}
+  {# Email: sender + subject #}
   <div class="field">
     <label>Sender</label>
     {% if sample_sender %}
@@ -343,9 +373,40 @@
          font-size:.72rem; font-weight:700; letter-spacing:.03em; }
 .badge-sms   { background:#e8f4fd; color:#0066cc; border:1px solid #b8d4f0; }
 .badge-email { background:#f0f0f0; color:#555;    border:1px solid #ccc; }
+
+fieldset.form-group {
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: .85rem 1.1rem 1rem;
+  margin-bottom: 1.1rem;
+}
+fieldset.form-group > legend {
+  font-weight: 600;
+  font-size: .82rem;
+  padding: 0 .35rem;
+  color: #555;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
 </style>
 
 <script>
+{% if not provider %}
+// ── Default tag auto-fill on channel type change ──────────────────────────────
+var _emailCount  = {{ email_count }};
+var _smsCount    = {{ sms_count }};
+var _tagInput    = document.getElementById('tag');
+var _tagDefault  = _tagInput.value;
+
+function _computeTagDefault() {
+  var isSms = document.querySelector('input[name=channel_type]:checked') &&
+              document.querySelector('input[name=channel_type]:checked').value === 'sms';
+  var n     = isSms ? _smsCount : _emailCount;
+  var label = isSms ? 'SMS' : 'Email';
+  return n === 0 ? label : label + ' #' + (n + 1);
+}
+{% endif %}
+
 // ── Toggle email-source field and sample label based on channel type ──────────
 function updateChannelType() {
   var radios = document.querySelectorAll('input[name=channel_type]');
@@ -361,6 +422,15 @@ function updateChannelType() {
   if (hint) hint.textContent = isSms
     ? 'Paste a representative SMS body for reference.'
     : 'Paste a representative email for reference and sender detection.';
+
+{% if not provider %}
+  // Update default tag if the user hasn't typed a custom value
+  var newDefault = _computeTagDefault();
+  if (_tagInput.value === _tagDefault) {
+    _tagInput.value = newDefault;
+  }
+  _tagDefault = newDefault;
+{% endif %}
 }
 updateChannelType();
 
@@ -378,7 +448,7 @@ document.querySelectorAll('input[name=extract_mode]').forEach(function(r) {
 });
 updateMode();
 
-// ── SMS: toggle phone / body sections ────────────────────────────────────────
+// ── SMS: toggle phone / body sections (add-header form) ───────────────────────
 function pfSmsMatchChanged() {
   var isPhone = document.getElementById('pf-match-phone') &&
                 document.getElementById('pf-match-phone').checked;
@@ -399,6 +469,38 @@ function pfSmsMatchChanged() {
     modeEl.value = 'custom';
     {% endif %}
   }
+}
+
+// ── Test Extraction ───────────────────────────────────────────────────────────
+function runTestExtraction() {
+  var result = document.getElementById('test-result');
+  var btn    = document.getElementById('test-btn');
+  result.value = 'Testing\u2026';
+  result.style.color = '#888';
+  btn.disabled = true;
+
+  var fd = new FormData(document.getElementById('channel-form'));
+
+  fetch('{{ url_for("admin.channel_test_extract", config_id=config.id) }}', {
+    method: 'POST',
+    body: fd
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (data.nonce !== undefined) {
+      result.value = data.nonce;
+      result.style.color = '#155724';
+    } else {
+      result.value = '\u2717 ' + (data.error || 'No match');
+      result.style.color = '#721c24';
+    }
+    btn.disabled = false;
+  })
+  .catch(function() {
+    result.value = '\u2717 Request failed';
+    result.style.color = '#721c24';
+    btn.disabled = false;
+  });
 }
 </script>
 
