@@ -47,7 +47,7 @@ CREATE TABLE IF NOT EXISTS providers (
     nonce_end_marker    TEXT,
     nonce_length        INTEGER,
     sample_email        TEXT,
-    UNIQUE(user_id, tag)
+    UNIQUE(config_id, tag)
 );
 
 CREATE TABLE IF NOT EXISTS provider_matchers (

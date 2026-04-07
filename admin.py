@@ -425,6 +425,9 @@ def config_submit(config_id):
     if not config['description']:
         flash('A description is required before submitting for marketplace review.', 'error')
         return redirect(url_for('admin.config_edit', config_id=config_id))
+    if not request.form.get('tos_accepted'):
+        flash('You must agree to the Terms of Use before submitting for marketplace review.', 'error')
+        return redirect(url_for('admin.config_detail', config_id=config_id))
 
     db = get_db()
     db.execute(

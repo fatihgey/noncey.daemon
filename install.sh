@@ -413,6 +413,34 @@ if 'provider_matchers' in tables:
             "CHECK(body_match_type IN ('starts_with', 'regex'))"
         )
 
+# ── Fix providers UNIQUE constraint: (user_id, tag) → (config_id, tag) ────────
+# SQLite cannot ALTER a UNIQUE constraint; must rebuild the table.
+tbl_sql = db.execute(
+    "SELECT sql FROM sqlite_master WHERE type='table' AND name='providers'"
+).fetchone()
+if tbl_sql and 'user_id, tag' in tbl_sql[0]:
+    db.execute("PRAGMA foreign_keys = OFF")
+    db.execute("""
+        CREATE TABLE providers_new (
+            id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id             INTEGER NOT NULL REFERENCES users(id)         ON DELETE CASCADE,
+            config_id           INTEGER          REFERENCES configurations(id) ON DELETE SET NULL,
+            tag                 TEXT    NOT NULL,
+            channel_type        TEXT    NOT NULL DEFAULT 'email'
+                                    CHECK(channel_type IN ('email', 'sms')),
+            extract_source      TEXT    NOT NULL DEFAULT 'body',
+            extract_mode        TEXT    NOT NULL DEFAULT 'auto',
+            nonce_start_marker  TEXT    NOT NULL DEFAULT '',
+            nonce_end_marker    TEXT,
+            nonce_length        INTEGER,
+            sample_email        TEXT,
+            UNIQUE(config_id, tag)
+        )
+    """)
+    db.execute("INSERT INTO providers_new SELECT * FROM providers")
+    db.execute("DROP TABLE providers")
+    db.execute("ALTER TABLE providers_new RENAME TO providers")
+
 db.execute("PRAGMA foreign_keys = ON")
 db.commit()
 db.close()
