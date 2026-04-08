@@ -420,6 +420,7 @@ tbl_sql = db.execute(
 ).fetchone()
 if tbl_sql and 'user_id, tag' in tbl_sql[0]:
     db.execute("PRAGMA foreign_keys = OFF")
+    db.execute("DROP TABLE IF EXISTS providers_new")
     db.execute("""
         CREATE TABLE providers_new (
             id                  INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -485,6 +486,7 @@ if 'configurations' in tables:
     ).fetchone()
     if tbl_sql and 'NOT NULL' in tbl_sql[0] and 'owner_id' in tbl_sql[0].split('NOT NULL')[0]:
         db.execute("PRAGMA foreign_keys = OFF")
+        db.execute("DROP TABLE IF EXISTS configurations_new")
         db.execute("""
             CREATE TABLE configurations_new (
                 id                INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -526,6 +528,7 @@ if 'providers' in tables:
     ).fetchone()
     if tbl_sql and 'user_id             INTEGER NOT NULL' in tbl_sql[0]:
         db.execute("PRAGMA foreign_keys = OFF")
+        db.execute("DROP TABLE IF EXISTS providers_new")
         db.execute("""
             CREATE TABLE providers_new (
                 id                  INTEGER PRIMARY KEY AUTOINCREMENT,
