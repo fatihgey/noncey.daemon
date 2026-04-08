@@ -16,6 +16,17 @@ database  = postfix
 cert = /etc/ssl/noncey/fullchain.pem
 key  = /etc/ssl/noncey/privkey.pem
 
+[smtp]
+# Used for transactional emails (e.g. account deletion confirmation).
+# Leave host empty to disable outgoing email.
+host     = localhost
+port     = 25
+# tls: no | starttls | ssl
+tls      = no
+username =
+password =
+from     = noncey@nonces.yourdomain.com
+
 [paths]
 install_dir  = /opt/noncey/daemon
 db_path      = /opt/noncey/daemon/var/noncey.db

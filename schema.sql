@@ -4,12 +4,13 @@ CREATE TABLE IF NOT EXISTS users (
     password_hash TEXT    NOT NULL,
     email         TEXT    DEFAULT NULL,
     is_admin      INTEGER NOT NULL DEFAULT 0,
-    created_at    TEXT    NOT NULL DEFAULT (datetime('now'))
+    created_at    TEXT    NOT NULL DEFAULT (datetime('now')),
+    delete_at     TEXT    DEFAULT NULL
 );
 
 CREATE TABLE IF NOT EXISTS configurations (
     id                INTEGER PRIMARY KEY AUTOINCREMENT,
-    owner_id          INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    owner_id          INTEGER REFERENCES users(id) ON DELETE SET NULL,
     name              TEXT    NOT NULL,
     version           TEXT    NOT NULL DEFAULT '-1',
     description       TEXT    DEFAULT NULL,
@@ -36,7 +37,7 @@ CREATE TABLE IF NOT EXISTS subscriptions (
 
 CREATE TABLE IF NOT EXISTS providers (
     id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id             INTEGER NOT NULL REFERENCES users(id)         ON DELETE CASCADE,
+    user_id             INTEGER REFERENCES users(id)         ON DELETE SET NULL,
     config_id           INTEGER          REFERENCES configurations(id) ON DELETE SET NULL,
     tag                 TEXT    NOT NULL,
     channel_type        TEXT    NOT NULL DEFAULT 'email'

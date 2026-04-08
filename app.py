@@ -563,6 +563,44 @@ def sms_ingest():
     return '', 204
 
 
+# ── Email helper ─────────────────────────────────────────────────────────────
+
+def _send_email(to_addr: str, subject: str, body: str):
+    """Send a plain-text email via SMTP settings in noncey.conf [smtp].
+    Silently skips if smtp.host is not configured."""
+    import smtplib
+    from email.message import EmailMessage
+
+    host = cfg('smtp', 'host', fallback='')
+    if not host:
+        return
+    port     = int(cfg('smtp', 'port', fallback='25'))
+    tls_mode = cfg('smtp', 'tls', fallback='no').lower()
+    username = cfg('smtp', 'username', fallback='') or None
+    password = cfg('smtp', 'password', fallback='') or None
+    from_addr = cfg('smtp', 'from', fallback='noreply@localhost')
+
+    msg = EmailMessage()
+    msg['Subject'] = subject
+    msg['From']    = from_addr
+    msg['To']      = to_addr
+    msg.set_content(body)
+
+    try:
+        if tls_mode == 'ssl':
+            ctx = smtplib.SMTP_SSL(host, port)
+        else:
+            ctx = smtplib.SMTP(host, port)
+            if tls_mode == 'starttls':
+                ctx.starttls()
+        with ctx as smtp:
+            if username:
+                smtp.login(username, password)
+            smtp.send_message(msg)
+    except Exception as exc:
+        print(f'Warning: failed to send email to {to_addr}: {exc}')
+
+
 # ── Management CLI ────────────────────────────────────────────────────────────
 
 @app.cli.command('add-user')
@@ -616,6 +654,44 @@ def remove_user_command():
     db.execute("DELETE FROM users WHERE username = ?", (username,))
     db.commit()
     print(f"noncey: user {username!r} removed.")
+
+
+@app.cli.command('delete-pending-accounts')
+def delete_pending_accounts_command():
+    """Delete accounts whose delete_at timer has expired. Run via cron."""
+    db  = get_db()
+    now = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S')
+    users = db.execute(
+        "SELECT id, username, email FROM users "
+        "WHERE delete_at IS NOT NULL AND delete_at <= ?",
+        (now,)
+    ).fetchall()
+
+    for user in users:
+        uid      = user['id']
+        username = user['username']
+        email    = user['email']
+
+        # Delete private configs first (CASCADE removes their providers/matchers/nonces)
+        db.execute(
+            "DELETE FROM configurations WHERE owner_id=? AND visibility='private'",
+            (uid,)
+        )
+        # Delete user — CASCADE removes nonces, sessions, subscriptions, unmatched_items;
+        # SET NULL on configurations.owner_id (public) and providers.user_id (public config providers)
+        db.execute("DELETE FROM users WHERE id=?", (uid,))
+        db.commit()
+
+        print(f"noncey: deleted account {username!r} (id={uid})")
+        if email:
+            _send_email(
+                email,
+                'Account Deletion Noncey',
+                'Your account has been successfully deleted.'
+            )
+
+    if not users:
+        print('noncey: no accounts pending deletion.')
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────

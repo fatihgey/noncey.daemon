@@ -1,0 +1,46 @@
+{% extends 'admin/_base.html' %}
+{% block title %}noncey — Account Deletion{% endblock %}
+{% block content %}
+
+<h1>Account Deletion</h1>
+
+<p>
+  Clicking on the button below will mark your account for deletion within 3 days.
+  Within this period, you can return to this page and disable deletion.
+  Each repeated marking for deletion will reset the 3-day timer.
+  After 3 days have passed at which your account remains marked for deletion,
+  your account (incl. all your data, see below) will be irrevocably deleted.
+</p>
+
+<form method="post" style="margin-bottom:.5rem;">
+  {% if user.delete_at %}
+    <input type="hidden" name="action" value="unmark">
+    <button class="btn btn-success" type="submit">Unmark for deletion</button>
+  {% else %}
+    <input type="hidden" name="action" value="mark">
+    <button class="btn btn-danger" type="submit">Mark Account for Deletion</button>
+  {% endif %}
+</form>
+
+{% if user.delete_at and remaining %}
+<p>Account will be deleted in <strong>{{ remaining }}</strong>.</p>
+{% endif %}
+
+<hr>
+
+<h2>Your data</h2>
+
+<h3>Your account</h3>
+<p>
+  Username: <strong>{{ user.username }}</strong><br>
+  Password: (hashed, stored securely)<br>
+  Email address: <strong>{{ user.email or '(not set)' }}</strong>
+</p>
+
+<h3>Your stored configurations</h3>
+<p>{{ private_config_count }} private configuration{{ 's' if private_config_count != 1 }}</p>
+
+<h3>Your stored nonces</h3>
+<p>{{ nonce_count }} nonce{{ 's' if nonce_count != 1 }} currently stored</p>
+
+{% endblock %}

@@ -32,4 +32,9 @@
 <a class="btn btn-primary" href="{{ url_for('admin.account_gmail_xml') }}">Download gmail_filters.xml</a>
 <p class="hint">Import in Gmail: Settings → Filters and Blocked Addresses → Import filters.</p>
 
+<hr>
+
+<h2>Account Deletion</h2>
+<a class="btn btn-danger" href="{{ url_for('admin.account_close') }}">Close Account</a>
+
 {% endblock %}

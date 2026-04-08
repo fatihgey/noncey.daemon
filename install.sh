@@ -447,6 +447,85 @@ db.close()
 PY
 ok "SMS support migrations applied (v3/v4)."
 
+# Fourth migration block: account deletion + orphaned public config support (v5)
+# - Adds delete_at column to users
+# - Rebuilds configurations to make owner_id nullable (ON DELETE SET NULL)
+# - Rebuilds providers to make user_id nullable (ON DELETE SET NULL)
+sudo -u noncey "$VENV/bin/python3" - "$DB_PATH" <<'PY'
+import sqlite3, sys
+db = sqlite3.connect(sys.argv[1])
+db.row_factory = sqlite3.Row
+tables = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+
+# ── Add delete_at to users ────────────────────────────────────────────────────
+if 'users' in tables:
+    cols = {r[1] for r in db.execute("PRAGMA table_info(users)").fetchall()}
+    if 'delete_at' not in cols:
+        db.execute("ALTER TABLE users ADD COLUMN delete_at TEXT DEFAULT NULL")
+
+# ── Make configurations.owner_id nullable (ON DELETE SET NULL) ─────────────────
+if 'configurations' in tables:
+    tbl_sql = db.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='configurations'"
+    ).fetchone()
+    if tbl_sql and 'NOT NULL' in tbl_sql[0] and 'owner_id' in tbl_sql[0].split('NOT NULL')[0]:
+        db.execute("PRAGMA foreign_keys = OFF")
+        db.execute("""
+            CREATE TABLE configurations_new (
+                id                INTEGER PRIMARY KEY AUTOINCREMENT,
+                owner_id          INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                name              TEXT    NOT NULL,
+                version           TEXT    NOT NULL DEFAULT '-1',
+                description       TEXT    DEFAULT NULL,
+                status            TEXT    NOT NULL DEFAULT 'incomplete',
+                visibility        TEXT    NOT NULL DEFAULT 'private',
+                activated         INTEGER NOT NULL DEFAULT 0,
+                prompt            TEXT    DEFAULT NULL,
+                client_test_count INTEGER NOT NULL DEFAULT 0,
+                created_at        TEXT    NOT NULL DEFAULT (datetime('now')),
+                updated_at        TEXT    NOT NULL DEFAULT (datetime('now')),
+                UNIQUE(owner_id, name, version)
+            )
+        """)
+        db.execute("INSERT INTO configurations_new SELECT * FROM configurations")
+        db.execute("DROP TABLE configurations")
+        db.execute("ALTER TABLE configurations_new RENAME TO configurations")
+        db.execute("PRAGMA foreign_keys = ON")
+
+# ── Make providers.user_id nullable (ON DELETE SET NULL) ───────────────────────
+if 'providers' in tables:
+    tbl_sql = db.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='providers'"
+    ).fetchone()
+    if tbl_sql and 'user_id             INTEGER NOT NULL' in tbl_sql[0]:
+        db.execute("PRAGMA foreign_keys = OFF")
+        db.execute("""
+            CREATE TABLE providers_new (
+                id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id             INTEGER REFERENCES users(id)         ON DELETE SET NULL,
+                config_id           INTEGER REFERENCES configurations(id) ON DELETE SET NULL,
+                tag                 TEXT    NOT NULL,
+                channel_type        TEXT    NOT NULL DEFAULT 'email'
+                                        CHECK(channel_type IN ('email', 'sms')),
+                extract_source      TEXT    NOT NULL DEFAULT 'body',
+                extract_mode        TEXT    NOT NULL DEFAULT 'auto',
+                nonce_start_marker  TEXT    NOT NULL DEFAULT '',
+                nonce_end_marker    TEXT,
+                nonce_length        INTEGER,
+                sample_email        TEXT,
+                UNIQUE(config_id, tag)
+            )
+        """)
+        db.execute("INSERT INTO providers_new SELECT * FROM providers")
+        db.execute("DROP TABLE providers")
+        db.execute("ALTER TABLE providers_new RENAME TO providers")
+        db.execute("PRAGMA foreign_keys = ON")
+
+db.commit()
+db.close()
+PY
+ok "Account deletion support migrations applied (v5)."
+
 (
     cd "$INSTALL_DIR"
     sudo -u noncey \

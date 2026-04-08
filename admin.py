@@ -1160,9 +1160,9 @@ def marketplace_browse():
     db      = get_db()
 
     configs = db.execute(
-        "SELECT c.*, u.username AS owner_name "
+        "SELECT c.*, COALESCE(u.username, '[deleted]') AS owner_name "
         "FROM configurations c "
-        "JOIN users u ON u.id = c.owner_id "
+        "LEFT JOIN users u ON u.id = c.owner_id "
         "WHERE c.visibility='public' AND c.status IN ('valid', 'valid_tested') "
         "ORDER BY c.name, c.version DESC",
     ).fetchall()
@@ -1280,9 +1280,10 @@ def marketplace_update(old_config_id, new_config_id):
 
 # ── Account settings ──────────────────────────────────────────────────────────
 
-@admin_bp.route('/account/password', methods=['GET', 'POST'])
+@admin_bp.route('/account/settings', methods=['GET', 'POST'])
+@admin_bp.route('/account/password', methods=['GET', 'POST'])   # legacy redirect
 @login_required
-def account_password():
+def account_settings():
     user_id = session['user_id']
     if request.method == 'POST':
         current   = request.form.get('current_password', '')
@@ -1378,6 +1379,65 @@ def account_gmail_xml():
         mimetype='application/xml',
         headers={'Content-Disposition': 'attachment; filename="gmail_filters.xml"'}
     )
+
+
+@admin_bp.route('/account/close', methods=['GET', 'POST'])
+@login_required
+def account_close():
+    user_id = session['user_id']
+    db      = get_db()
+
+    if request.method == 'POST':
+        action = request.form.get('action', '')
+        if action == 'mark':
+            db.execute(
+                "UPDATE users SET delete_at=datetime('now','+3 days') WHERE id=?",
+                (user_id,)
+            )
+            db.commit()
+            flash('Your account has been marked for deletion.', 'info')
+        elif action == 'unmark':
+            db.execute("UPDATE users SET delete_at=NULL WHERE id=?", (user_id,))
+            db.commit()
+            flash('Account deletion cancelled.', 'success')
+        return redirect(url_for('admin.account_close'))
+
+    user = db.execute(
+        "SELECT username, email, delete_at FROM users WHERE id=?", (user_id,)
+    ).fetchone()
+
+    # Compute human-readable countdown
+    remaining = None
+    if user['delete_at']:
+        try:
+            delete_at = datetime.fromisoformat(user['delete_at']).replace(tzinfo=timezone.utc)
+            delta     = delete_at - datetime.now(timezone.utc)
+            total_sec = delta.total_seconds()
+            if total_sec > 0:
+                total_hours = int(total_sec // 3600)
+                if total_hours < 1:
+                    remaining = '<1h'
+                else:
+                    remaining = f"{total_hours // 24}d {total_hours % 24}h"
+            else:
+                remaining = 'pending deletion'
+        except ValueError:
+            remaining = 'unknown'
+
+    # Data summary
+    private_config_count = db.execute(
+        "SELECT COUNT(*) FROM configurations WHERE owner_id=? AND visibility='private'",
+        (user_id,)
+    ).fetchone()[0]
+    nonce_count = db.execute(
+        "SELECT COUNT(*) FROM nonces WHERE user_id=?", (user_id,)
+    ).fetchone()[0]
+
+    return render_template('admin/account_close.html',
+                           user=user,
+                           remaining=remaining,
+                           private_config_count=private_config_count,
+                           nonce_count=nonce_count)
 
 
 # ── Admin: user management ────────────────────────────────────────────────────

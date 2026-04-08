@@ -286,7 +286,8 @@ Response: `204 No Content`.
 | `GET /auth/marketplace` | Browse public configurations |
 | `POST /auth/marketplace/<id>/subscribe` | Subscribe to a public config |
 | `POST /auth/marketplace/<id>/update/<local_id>` | Update subscription to newer version |
-| `GET /auth/account/password` | Change own password |
+| `GET /auth/account/settings` | Change own password (legacy: `/auth/account/password`) |
+| `GET /auth/account/close` | Mark / unmark account for deletion |
 | `GET /auth/account/gmail-filters.xml` | Download Gmail Atom filter XML |
 | `GET /auth/admin/users` | *(admin)* User list |
 | `GET/POST /auth/admin/users/new` | *(admin)* Create user |
