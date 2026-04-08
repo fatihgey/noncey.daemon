@@ -437,7 +437,22 @@ if tbl_sql and 'user_id, tag' in tbl_sql[0]:
             UNIQUE(config_id, tag)
         )
     """)
-    db.execute("INSERT INTO providers_new SELECT * FROM providers")
+    # Explicitly map columns by name so the INSERT is order-independent.
+    # Existing rows may have channel_type = NULL if the ALTER TABLE DEFAULT
+    # wasn't applied uniformly; coerce to 'email' to satisfy the CHECK.
+    db.execute("""
+        INSERT INTO providers_new
+            (id, user_id, config_id, tag, channel_type, extract_source,
+             extract_mode, nonce_start_marker, nonce_end_marker,
+             nonce_length, sample_email)
+        SELECT id, user_id, config_id, tag,
+               COALESCE(channel_type, 'email'),
+               COALESCE(extract_source, 'body'),
+               COALESCE(extract_mode, 'auto'),
+               COALESCE(nonce_start_marker, ''),
+               nonce_end_marker, nonce_length, sample_email
+        FROM providers
+    """)
     db.execute("DROP TABLE providers")
     db.execute("ALTER TABLE providers_new RENAME TO providers")
 
@@ -487,7 +502,19 @@ if 'configurations' in tables:
                 UNIQUE(owner_id, name, version)
             )
         """)
-        db.execute("INSERT INTO configurations_new SELECT * FROM configurations")
+        db.execute("""
+            INSERT INTO configurations_new
+                (id, owner_id, name, version, description, status,
+                 visibility, activated, prompt, client_test_count,
+                 created_at, updated_at)
+            SELECT id, owner_id, name, version, description, status,
+                   COALESCE(visibility, 'private'),
+                   COALESCE(activated, 0),
+                   prompt,
+                   COALESCE(client_test_count, 0),
+                   created_at, updated_at
+            FROM configurations
+        """)
         db.execute("DROP TABLE configurations")
         db.execute("ALTER TABLE configurations_new RENAME TO configurations")
         db.execute("PRAGMA foreign_keys = ON")
@@ -516,7 +543,19 @@ if 'providers' in tables:
                 UNIQUE(config_id, tag)
             )
         """)
-        db.execute("INSERT INTO providers_new SELECT * FROM providers")
+        db.execute("""
+            INSERT INTO providers_new
+                (id, user_id, config_id, tag, channel_type, extract_source,
+                 extract_mode, nonce_start_marker, nonce_end_marker,
+                 nonce_length, sample_email)
+            SELECT id, user_id, config_id, tag,
+                   COALESCE(channel_type, 'email'),
+                   COALESCE(extract_source, 'body'),
+                   COALESCE(extract_mode, 'auto'),
+                   COALESCE(nonce_start_marker, ''),
+                   nonce_end_marker, nonce_length, sample_email
+            FROM providers
+        """)
         db.execute("DROP TABLE providers")
         db.execute("ALTER TABLE providers_new RENAME TO providers")
         db.execute("PRAGMA foreign_keys = ON")
@@ -733,6 +772,8 @@ cat > "${ETC_DIR}/noncey.cron" <<EOF
 # noncey — purge email archives (.eml) and SMS archives (.json) older than ${ARCHIVE_RETENTION} days
 0 3 * * *  noncey  find ${ARCHIVE_PATH} -name "*.eml"  -mtime +${ARCHIVE_RETENTION} -delete 2>/dev/null
 0 3 * * *  noncey  find ${ARCHIVE_PATH} -name "*.json" -mtime +${ARCHIVE_RETENTION} -delete 2>/dev/null
+# noncey — delete accounts whose 3-day deletion timer has expired
+0 * * * *  noncey  FLASK_APP=${INSTALL_DIR}/app.py NONCEY_CONF=${CONF} ${VENV}/bin/flask delete-pending-accounts >/dev/null 2>&1
 EOF
 chown root:root "${ETC_DIR}/noncey.cron"
 chmod 644       "${ETC_DIR}/noncey.cron"
