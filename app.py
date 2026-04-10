@@ -342,7 +342,7 @@ def list_configs():
             'version':       row['version'],
             'status':        row['status'],
             'visibility':    row['visibility'],
-            'activated':     None,
+            'activated':     True,
             'prompt':        prompt_data,
             'is_owned':      False,
             'provider_tags': tags,
