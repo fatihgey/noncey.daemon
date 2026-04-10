@@ -334,12 +334,12 @@
 
   </fieldset>
 
-  {# ── Action row: Create channel · Dismiss · Back ── #}
+  {# ── Action row: Create channel · Back · Dismiss ── #}
   <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.5rem;">
     <input class="btn btn-primary" type="submit" value="Create channel">
-    <button class="btn btn-danger" type="submit" form="dismiss-form"
-            onclick="return confirm('Dismiss this item without creating a channel?')">Dismiss</button>
     <a class="btn" href="{{ url_for('admin.unmatched_list') }}">← Back</a>
+    <button class="btn btn-danger" type="submit" form="dismiss-form" style="margin-left:auto;"
+            onclick="return confirm('Dismiss this item without creating a channel?')">Dismiss</button>
   </div>
 </form>
 

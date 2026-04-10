@@ -21,7 +21,8 @@
   </thead>
   <tbody>
     {% for e in emails %}
-    <tr>
+    <tr style="cursor:pointer;"
+        onclick="location.href='{{ url_for('admin.unmatched_detail', email_id=e.id) }}'">
       <td>
         {% if e.channel_type == 'sms' %}
         <span class="badge badge-sms">SMS</span>
@@ -38,8 +39,7 @@
         {% endif %}
       </td>
       <td>{{ e.received_at[:16] }}</td>
-      <td class="actions">
-        <a class="btn btn-primary" href="{{ url_for('admin.unmatched_detail', email_id=e.id) }}">Inspect</a>
+      <td class="actions" onclick="event.stopPropagation()">
         <form class="inline" method="post"
               action="{{ url_for('admin.unmatched_dismiss', email_id=e.id) }}">
           <button class="btn btn-danger" type="submit"

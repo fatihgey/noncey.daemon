@@ -22,8 +22,10 @@
     <input type="password" id="password2" name="password2" required autocomplete="new-password">
   </div>
 
-  <input class="btn btn-primary" type="submit" value="Change password">
-  <a class="btn btn-danger" href="{{ url_for('admin.account_close') }}">Delete account</a>
+  <div style="display:flex;gap:.5rem;">
+    <input class="btn btn-primary" type="submit" value="Change password">
+    <a class="btn btn-danger" href="{{ url_for('admin.account_close') }}" style="margin-left:auto;">Delete account</a>
+  </div>
 </form>
 
 {% endblock %}

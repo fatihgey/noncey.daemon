@@ -43,7 +43,7 @@
             title="Add at least one channel with a header and a prompt first">Activate</button>
   {% endif %}
 
-  <a class="btn btn-danger" href="{{ url_for('admin.config_delete', config_id=config.id) }}">Delete</a>
+  <a class="btn btn-danger" href="{{ url_for('admin.config_delete', config_id=config.id) }}" style="margin-left:auto;">Delete</a>
 </div>
 
 {% else %}{# public config — read-only #}
