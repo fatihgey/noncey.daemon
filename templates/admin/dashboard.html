@@ -17,13 +17,19 @@
   <tbody>
     {% for c in own_configs %}
     <tr style="cursor:pointer;"
+        {% if c.id in email_config_ids %}data-email-channel="1"{% endif %}
         onclick="location.href='{{ url_for('admin.config_detail', config_id=c.id) }}'">
       <td style="white-space:nowrap;color:#555;">Private</td>
       <td>
         <strong>{{ c.name }}</strong>
-        <span class="badge badge-{{ c.status }}" style="margin-left:.35rem;">{{ c.status.replace('_', ' ') }}</span>
         {% if c.activated %}
-          <span class="badge badge-success" style="margin-left:.25rem;background:#28a745;color:#fff;">active</span>
+          {% if c.status == 'valid_tested' %}
+            <span class="badge badge-success" style="margin-left:.35rem;">active</span>
+          {% else %}
+            <span class="badge badge_active_valid" style="margin-left:.35rem;">active</span>
+          {% endif %}
+        {% else %}
+          <span class="badge badge-{{ c.status }}" style="margin-left:.35rem;">{{ c.status.replace('_', ' ') }}</span>
         {% endif %}
       </td>
       <td onclick="event.stopPropagation()">
@@ -45,6 +51,7 @@
         data-open-url="{{ url_for('admin.config_detail', config_id=c.id) }}"
         data-unsub-url="{{ url_for('admin.marketplace_unsubscribe', config_id=c.id) }}"
         data-sub-url="{{ url_for('admin.marketplace_subscribe', src_config_id=c.id) }}"
+        {% if c.id in email_config_ids %}data-email-channel="1"{% endif %}
         onclick="if(!this.dataset.disabled)location.href=this.dataset.openUrl">
       <td style="white-space:nowrap;color:#0c5460;">Public</td>
       <td>
@@ -77,10 +84,19 @@
 
 <div style="display:flex;gap:.75rem;margin-top:1.25rem;flex-wrap:wrap;align-items:center;">
   <a class="btn btn-primary" href="{{ url_for('admin.wizard_start') }}">+ New configuration</a>
-  <a class="btn" href="{{ url_for('admin.account_gmail_xml') }}">Download Gmail filters</a>
+  <a id="gmail-btn" class="btn" href="{{ url_for('admin.account_gmail_xml') }}"
+     style="{{ '' if email_config_ids else 'display:none;' }}">Download Gmail filters</a>
 </div>
 
 <script>
+function updateGmailBtn() {
+  var hasEmail = Array.from(document.querySelectorAll('tr[data-email-channel="1"]')).some(function(row) {
+    return !row.dataset.disabled;
+  });
+  var btn = document.getElementById('gmail-btn');
+  if (btn) btn.style.display = hasEmail ? '' : 'none';
+}
+
 document.querySelectorAll('.sub-toggle').forEach(function(btn) {
   btn.addEventListener('click', function() {
     var row = btn.closest('tr');
@@ -107,6 +123,7 @@ document.querySelectorAll('.sub-toggle').forEach(function(btn) {
           });
           btn.textContent = 'Unsubscribe';
         }
+        updateGmailBtn();
       }
     }).catch(function() {});
   });

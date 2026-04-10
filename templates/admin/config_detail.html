@@ -43,31 +43,8 @@
             title="Add at least one channel with a header and a prompt first">Activate</button>
   {% endif %}
 
-  {% if config.status == 'valid_tested' %}
-    <form method="post"
-          action="{{ url_for('admin.config_submit', config_id=config.id) }}"
-          style="margin-top:.5rem;">
-      <div style="margin-bottom:.6rem;font-size:.875rem;">
-        <label style="display:flex;align-items:flex-start;gap:.5rem;cursor:pointer;">
-          <input type="checkbox" name="tos_accepted" required style="margin-top:.2rem;flex-shrink:0;">
-          <span>I have read and agree to the
-            <a href="https://p.ai.r-programming.de/terms_noncey" target="_blank" rel="noopener">
-              noncey Terms of Use</a>,
-            which govern user-generated content published to the marketplace.</span>
-        </label>
-      </div>
-      <button class="btn btn-primary" type="submit">Submit for marketplace review</button>
-    </form>
-  {% elif config.status == 'pending_review' %}
-    <span style="color:#856404;font-size:.875rem;padding:.4rem 0;">Awaiting admin review</span>
-  {% endif %}
-
   <a class="btn btn-danger" href="{{ url_for('admin.config_delete', config_id=config.id) }}">Delete</a>
 </div>
-
-{% if config.status == 'valid_tested' and not config.description %}
-<div class="flash error">A description is required before submitting for marketplace review. <a href="{{ url_for('admin.config_edit', config_id=config.id) }}">Add one now.</a></div>
-{% endif %}
 
 {% else %}{# public config — read-only #}
 <div style="margin-bottom:1.5rem;">
@@ -163,6 +140,32 @@
 <p class="hint" style="color:#c82333;">
   At least one channel with a header is required.
 </p>
+{% endif %}
+
+{% if config.visibility == 'private' and config.status in ('valid_tested', 'pending_review') %}
+<hr>
+<h2>Publish</h2>
+{% if config.status == 'valid_tested' %}
+  {% if not config.description %}
+  <div class="flash error">A description is required before submitting for marketplace review. <a href="{{ url_for('admin.config_edit', config_id=config.id) }}">Add one now.</a></div>
+  {% endif %}
+  <form method="post"
+        action="{{ url_for('admin.config_submit', config_id=config.id) }}"
+        style="margin-top:.5rem;">
+    <div style="margin-bottom:.6rem;font-size:.875rem;">
+      <label style="display:flex;align-items:flex-start;gap:.5rem;cursor:pointer;">
+        <input type="checkbox" name="tos_accepted" required style="margin-top:.2rem;flex-shrink:0;">
+        <span>I have read and agree to the
+          <a href="https://p.ai.r-programming.de/terms_noncey" target="_blank" rel="noopener">
+            noncey Terms of Use</a>,
+          which govern user-generated content published to the marketplace.</span>
+      </label>
+    </div>
+    <button class="btn btn-primary" type="submit">Submit for marketplace review</button>
+  </form>
+{% elif config.status == 'pending_review' %}
+  <span style="color:#856404;font-size:.875rem;padding:.4rem 0;">Awaiting admin review</span>
+{% endif %}
 {% endif %}
 
 {% if nonce_rows %}

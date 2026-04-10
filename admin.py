@@ -258,6 +258,19 @@ def dashboard():
         (user_id,)
     ).fetchall()
 
+    # Config IDs that have at least one email channel (for Gmail filters button)
+    all_config_ids = [c['id'] for c in own_configs] + [c['id'] for c in sub_configs]
+    email_config_ids: set = set()
+    if all_config_ids:
+        placeholders = ','.join('?' * len(all_config_ids))
+        email_config_ids = {
+            r['config_id'] for r in db.execute(
+                f"SELECT DISTINCT config_id FROM providers "
+                f"WHERE config_id IN ({placeholders}) AND channel_type='email'",
+                all_config_ids
+            ).fetchall()
+        }
+
     # Check update availability: is there a newer public version of the same name?
     update_available = {}
     for c in sub_configs:
@@ -274,7 +287,8 @@ def dashboard():
                            own_configs=own_configs,
                            sub_configs=sub_configs,
                            unmatched_count=unmatched_count,
-                           update_available=update_available)
+                           update_available=update_available,
+                           email_config_ids=email_config_ids)
 
 
 # ── Configuration management ──────────────────────────────────────────────────
