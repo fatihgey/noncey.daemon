@@ -478,6 +478,8 @@ if 'users' in tables:
     cols = {r[1] for r in db.execute("PRAGMA table_info(users)").fetchall()}
     if 'delete_at' not in cols:
         db.execute("ALTER TABLE users ADD COLUMN delete_at TEXT DEFAULT NULL")
+    if 'comment' not in cols:
+        db.execute("ALTER TABLE users ADD COLUMN comment TEXT DEFAULT NULL")
 
 # ── Make configurations.owner_id nullable (ON DELETE SET NULL) ─────────────────
 if 'configurations' in tables:

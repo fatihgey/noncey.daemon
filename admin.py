@@ -1535,6 +1535,7 @@ def admin_user_new():
     if request.method == 'POST':
         username  = request.form.get('username', '').strip()
         email     = request.form.get('email', '').strip() or None
+        comment   = request.form.get('comment', '').strip() or None
         password  = request.form.get('password', '')
         password2 = request.form.get('password2', '')
         is_admin  = 1 if request.form.get('is_admin') else 0
@@ -1556,8 +1557,8 @@ def admin_user_new():
         db = get_db()
         try:
             db.execute(
-                "INSERT INTO users (username, password_hash, email, is_admin) VALUES (?,?,?,?)",
-                (username, pw_hash, email, is_admin)
+                "INSERT INTO users (username, password_hash, email, is_admin, comment) VALUES (?,?,?,?,?)",
+                (username, pw_hash, email, is_admin, comment)
             )
             db.commit()
         except sqlite3.IntegrityError:
@@ -1581,6 +1582,7 @@ def admin_user_edit(user_id):
 
     if request.method == 'POST':
         email     = request.form.get('email', '').strip() or None
+        comment   = request.form.get('comment', '').strip() or None
         is_admin  = 1 if request.form.get('is_admin') else 0
         password  = request.form.get('password', '')
         password2 = request.form.get('password2', '')
@@ -1591,14 +1593,14 @@ def admin_user_edit(user_id):
                 return render_template('admin/admin_user_form.html', user=user)
             pw_hash = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
             db.execute(
-                "UPDATE users SET email=?, is_admin=?, password_hash=? WHERE id=?",
-                (email, is_admin, pw_hash, user_id)
+                "UPDATE users SET email=?, is_admin=?, password_hash=?, comment=? WHERE id=?",
+                (email, is_admin, pw_hash, comment, user_id)
             )
             db.execute("DELETE FROM sessions WHERE user_id=?", (user_id,))
         else:
             db.execute(
-                "UPDATE users SET email=?, is_admin=? WHERE id=?",
-                (email, is_admin, user_id)
+                "UPDATE users SET email=?, is_admin=?, comment=? WHERE id=?",
+                (email, is_admin, comment, user_id)
             )
         db.commit()
         flash(f"User '{user['username']}' updated.", 'success')

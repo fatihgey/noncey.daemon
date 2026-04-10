@@ -5,7 +5,8 @@ CREATE TABLE IF NOT EXISTS users (
     email         TEXT    DEFAULT NULL,
     is_admin      INTEGER NOT NULL DEFAULT 0,
     created_at    TEXT    NOT NULL DEFAULT (datetime('now')),
-    delete_at     TEXT    DEFAULT NULL
+    delete_at     TEXT    DEFAULT NULL,
+    comment       TEXT    DEFAULT NULL
 );
 
 CREATE TABLE IF NOT EXISTS configurations (

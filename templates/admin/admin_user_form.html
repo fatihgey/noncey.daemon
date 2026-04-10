@@ -20,6 +20,12 @@
   </div>
 
   <div class="field">
+    <label for="comment">Comment <small>(optional)</small></label>
+    <input type="text" id="comment" name="comment" autocomplete="off"
+           value="{{ user.comment if user and user.comment else '' }}">
+  </div>
+
+  <div class="field">
     <label style="font-weight:normal;display:flex;align-items:center;gap:.5rem;">
       <input type="checkbox" name="is_admin" value="1"
              {{ 'checked' if user and user.is_admin }}>
