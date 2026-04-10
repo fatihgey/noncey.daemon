@@ -31,15 +31,15 @@
       <td>
         {% set total = s.get('total', 0) %}
         {% if total %}
-          <a href="{{ url_for('admin.admin_user_sessions', user_id=u.id) }}" style="text-decoration:none;">
+          <a href="{{ url_for('admin.admin_user_sessions', user_id=u.id) }}" style="text-decoration:none;color:inherit;">
             {% if s.get('browser', 0) %}
-              <span class="client-badge client-browser" title="Browser sessions">🌐 {{ s.get('browser') }}</span>
+              <i class="bi bi-browser-chrome" title="Browser sessions"></i> {{ s.get('browser') }}
             {% endif %}
             {% if s.get('chrome', 0) %}
-              <span class="client-badge client-chrome" title="Chrome extension sessions">🔌 {{ s.get('chrome') }}</span>
+              <i class="bi bi-browser-chrome" title="Chrome extension sessions"></i> {{ s.get('chrome') }}
             {% endif %}
             {% if s.get('android', 0) %}
-              <span class="client-badge client-android" title="Android app sessions">📱 {{ s.get('android') }}</span>
+              <i class="bi bi-phone-fill" title="Android app sessions"></i> {{ s.get('android') }}
             {% endif %}
           </a>
         {% else %}
@@ -60,17 +60,5 @@
 <p class="empty">No users.</p>
 {% endif %}
 
-<style>
-  .client-badge {
-    display: inline-block;
-    margin-right: 0.35rem;
-    padding: 0.1em 0.4em;
-    border-radius: 3px;
-    font-size: 0.82rem;
-    background: #e9ecef;
-    color: #333;
-    white-space: nowrap;
-  }
-</style>
 
 {% endblock %}
