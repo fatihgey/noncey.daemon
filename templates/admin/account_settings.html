@@ -23,11 +23,7 @@
   </div>
 
   <input class="btn btn-primary" type="submit" value="Change password">
+  <a class="btn btn-danger" href="{{ url_for('admin.account_close') }}">Delete account</a>
 </form>
-
-<hr>
-
-<h2>Account Deletion</h2>
-<a class="btn btn-danger" href="{{ url_for('admin.account_close') }}">Close Account</a>
 
 {% endblock %}

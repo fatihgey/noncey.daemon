@@ -44,6 +44,9 @@
   <input class="btn btn-primary" type="submit"
          value="{{ 'Save changes' if user else 'Create user' }}">
   <a class="btn" href="{{ url_for('admin.admin_users') }}">Cancel</a>
+  {% if user and user.id != current_user.id %}
+  <a class="btn btn-danger" href="{{ url_for('admin.admin_user_delete', user_id=user.id) }}">Delete user</a>
+  {% endif %}
 </form>
 
 {% endblock %}

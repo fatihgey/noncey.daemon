@@ -22,7 +22,8 @@
   <tbody>
     {% for u in users %}
     {% set s = session_map.get(u.id, {}) %}
-    <tr>
+    <tr style="cursor:pointer;"
+        onclick="location.href='{{ url_for('admin.admin_user_edit', user_id=u.id) }}'">
       <td><strong>{{ u.username }}</strong></td>
       <td>{{ u.email or '' }}</td>
       <td>{% if u.is_admin %}✓{% endif %}</td>
@@ -46,8 +47,7 @@
         {% endif %}
       </td>
       <td>{{ u.created_at[:10] }}</td>
-      <td class="actions">
-        <a class="btn" href="{{ url_for('admin.admin_user_edit', user_id=u.id) }}">Edit</a>
+      <td class="actions" onclick="event.stopPropagation()">
         {% if u.id != current_user.id %}
         <a class="btn btn-danger" href="{{ url_for('admin.admin_user_delete', user_id=u.id) }}">Delete</a>
         {% endif %}
