@@ -356,12 +356,15 @@ def list_configs():
 @app.post('/api/configs/<int:config_id>/prompt')
 @require_auth
 def set_prompt(config_id: int):
-    data      = request.get_json(silent=True) or {}
-    url       = data.get('url', '').strip()
-    selector  = data.get('selector', '').strip()
-    url_match = data.get('url_match', 'prefix')
+    data          = request.get_json(silent=True) or {}
+    url           = data.get('url', '').strip()
+    selector      = data.get('selector', '').strip()
+    url_match     = data.get('url_match', 'prefix')
+    fill_strategy = data.get('fill_strategy', 'simple')
     if url_match not in ('exact', 'prefix', 'regex'):
         url_match = 'prefix'
+    if fill_strategy not in ('per_slot', 'paste', 'simple'):
+        fill_strategy = 'simple'
 
     if not url or not selector:
         return jsonify({'error': 'url and selector required'}), 400
@@ -370,7 +373,8 @@ def set_prompt(config_id: int):
     cur = db.execute(
         "UPDATE configurations SET prompt = ?, updated_at = datetime('now') "
         "WHERE  id = ? AND owner_id = ? AND visibility = 'private'",
-        (json.dumps({'url': url, 'url_match': url_match, 'selector': selector}),
+        (json.dumps({'url': url, 'url_match': url_match, 'selector': selector,
+                     'fill_strategy': fill_strategy}),
          config_id, g.user_id)
     )
     if cur.rowcount == 0:
