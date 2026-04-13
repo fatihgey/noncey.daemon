@@ -364,6 +364,31 @@ def config_edit(config_id):
     return render_template('admin/config_form.html', config=config)
 
 
+@admin_bp.post('/configs/<int:config_id>/description')
+@login_required
+def config_update_description(config_id):
+    """Admin-only: update the description of a public (read-only) configuration."""
+    user_id = session['user_id']
+    if not _is_admin(user_id):
+        flash('Administrator access required.', 'error')
+        return redirect(url_for('admin.config_detail', config_id=config_id))
+
+    config = _get_any_public_config(config_id)
+    if not config:
+        flash('Configuration not found.', 'error')
+        return redirect(url_for('admin.dashboard'))
+
+    description = request.form.get('description', '').strip() or None
+    db = get_db()
+    db.execute(
+        "UPDATE configurations SET description=?, updated_at=datetime('now') WHERE id=?",
+        (description, config_id)
+    )
+    db.commit()
+    flash('Description updated.', 'success')
+    return redirect(url_for('admin.config_detail', config_id=config_id))
+
+
 @admin_bp.route('/configs/<int:config_id>/delete', methods=['GET', 'POST'])
 @login_required
 def config_delete(config_id):

@@ -18,7 +18,7 @@
   {% endif %}
 </div>
 
-{% if config.description %}
+{% if config.description and not (config.visibility == 'public' and user_is_admin) %}
 <p style="color:#444;margin-bottom:1rem;">{{ config.description }}</p>
 {% endif %}
 
@@ -50,6 +50,18 @@
 <div style="margin-bottom:1.5rem;">
   <span style="color:#0c5460;font-size:.875rem;">Published in marketplace — read-only.</span>
 </div>
+{% endif %}
+
+{# ── Description (admin editable on public configs) ── #}
+{% if config.visibility == 'public' and user_is_admin %}
+<hr>
+<h2>Description</h2>
+<form method="post" action="{{ url_for('admin.config_update_description', config_id=config.id) }}" style="max-width:600px;">
+  <div class="field">
+    <textarea name="description" style="height:6rem;" placeholder="Describe what this configuration does.">{{ config.description or '' }}</textarea>
+  </div>
+  <button class="btn btn-primary" type="submit">Save description</button>
+</form>
 {% endif %}
 
 {# ── Prompt ── #}

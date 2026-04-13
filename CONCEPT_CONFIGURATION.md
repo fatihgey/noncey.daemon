@@ -303,7 +303,9 @@ Mutable; owned by one user.
 **Public configurations**
 One row in the `configurations` table.
 `visibility=public`, `version=YYYYMM-NN`.
-Immutable after publication. Owned by the publishing user but accessible to all.
+Immutable after publication with one exception: admin users may update the `description`
+field of any public configuration at any time (e.g. to correct or improve marketplace copy).
+All other fields remain read-only. Owned by the publishing user but accessible to all.
 
 **Subscriptions**
 A separate join table: `(user_id, config_id)`.
