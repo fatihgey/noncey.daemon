@@ -618,6 +618,16 @@ def nonce_consume(nonce_id):
     return jsonify({'ok': True})
 
 
+@admin_bp.post('/nonces/clear')
+@login_required
+def nonces_clear():
+    user_id = session['user_id']
+    db      = get_db()
+    db.execute("DELETE FROM nonces WHERE user_id=?", (user_id,))
+    db.commit()
+    return redirect(url_for('admin.dashboard'))
+
+
 # ── Provider management (config-scoped) ───────────────────────────────────────
 
 def _render_provider_form(config, provider, matchers, sample_sender,
