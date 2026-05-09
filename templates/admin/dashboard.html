@@ -2,6 +2,44 @@
 {% block title %}noncey — configurations{% endblock %}
 {% block content %}
 
+{% if codes %}
+<div style="margin-bottom:2rem;">
+  <h2 style="margin-top:0;">Available Codes</h2>
+  <table id="codes-table">
+    <thead>
+      <tr>
+        <th>Provider</th>
+        <th>Code</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for code in codes %}
+      <tr id="code-row-{{ code.id }}"
+          {% if code.consumed_at %}data-expires-in="{{ code.ms_until_delete }}"
+          style="opacity:.4;"{% endif %}>
+        <td>{{ code.provider_label }}</td>
+        <td><code>{{ code.nonce_value }}</code></td>
+        <td style="white-space:nowrap;">
+          {% if not code.consumed_at %}
+          <button class="btn btn-danger consume-btn"
+                  style="font-size:.82rem;padding:.2rem .6rem;"
+                  data-nonce-id="{{ code.id }}"
+                  data-code="{{ code.nonce_value }}"
+                  data-consume-url="{{ url_for('admin.nonce_consume', nonce_id=code.id) }}">
+            Consume
+          </button>
+          {% else %}
+          <span style="color:#aaa;font-size:.82rem;font-style:italic;">consumed</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
 <h1>Configurations</h1>
 
 {% if own_configs or sub_configs %}
@@ -89,6 +127,47 @@
 </div>
 
 <script>
+// ── Codes panel ───────────────────────────────────────────────────────────────
+function _clipboardFallback(text) {
+  var ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.cssText = 'position:fixed;opacity:0;pointer-events:none';
+  document.body.appendChild(ta);
+  ta.select();
+  try { document.execCommand('copy'); } catch(e) {}
+  document.body.removeChild(ta);
+}
+
+document.querySelectorAll('.consume-btn').forEach(function(btn) {
+  btn.addEventListener('click', function() {
+    var code       = btn.dataset.code;
+    var consumeUrl = btn.dataset.consumeUrl;
+    var row        = document.getElementById('code-row-' + btn.dataset.nonceId);
+
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(code).catch(function() { _clipboardFallback(code); });
+    } else {
+      _clipboardFallback(code);
+    }
+
+    fetch(consumeUrl, { method: 'POST' }).then(function(r) {
+      if (r.ok) {
+        row.style.opacity = '.4';
+        btn.closest('td').innerHTML =
+          '<span style="color:#aaa;font-size:.82rem;font-style:italic;">consumed</span>';
+        setTimeout(function() { row.remove(); }, 10 * 60 * 1000);
+      }
+    }).catch(function() {});
+  });
+});
+
+// Auto-remove already-consumed rows (loaded from server with remaining time)
+document.querySelectorAll('tr[data-expires-in]').forEach(function(row) {
+  var ms = parseInt(row.dataset.expiresIn, 10);
+  setTimeout(function() { row.remove(); }, ms > 0 ? ms : 0);
+});
+
+// ── Config table ──────────────────────────────────────────────────────────────
 function updateGmailBtn() {
   var hasEmail = Array.from(document.querySelectorAll('tr[data-email-channel="1"]')).some(function(row) {
     return !row.dataset.disabled;

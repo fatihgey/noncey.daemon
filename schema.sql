@@ -68,7 +68,8 @@ CREATE TABLE IF NOT EXISTS nonces (
     provider_id  INTEGER NOT NULL REFERENCES providers(id) ON DELETE CASCADE,
     nonce_value  TEXT    NOT NULL,
     received_at  TEXT    NOT NULL DEFAULT (datetime('now')),
-    expires_at   TEXT    NOT NULL
+    expires_at   TEXT    NOT NULL,
+    consumed_at  TEXT    DEFAULT NULL
 );
 
 CREATE TABLE IF NOT EXISTS sessions (
@@ -112,3 +113,6 @@ CREATE INDEX IF NOT EXISTS idx_configs_owner          ON configurations(owner_id
 CREATE INDEX IF NOT EXISTS idx_configs_status         ON configurations(status);
 CREATE INDEX IF NOT EXISTS idx_subscriptions_user     ON subscriptions(user_id);
 CREATE INDEX IF NOT EXISTS idx_subscriptions_config   ON subscriptions(config_id);
+
+-- Migration: adds consumed_at to existing databases (no-op on fresh installs)
+ALTER TABLE nonces ADD COLUMN IF NOT EXISTS consumed_at TEXT DEFAULT NULL;

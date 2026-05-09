@@ -60,7 +60,7 @@ from provision import ProvisionError, validate_username
 
 app = Flask(__name__)
 app.secret_key = cfg('general', 'secret_key')   # also used for Flask session / flash
-app.permanent_session_lifetime = timedelta(days=30)
+app.permanent_session_lifetime = timedelta(days=90)
 app.register_blueprint(admin_bp)
 
 try:

@@ -7,7 +7,7 @@ Flask handles authentication; Apache needs no auth directives.
 import re
 import sqlite3
 import xml.etree.ElementTree as ET
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from email.utils import parseaddr
 from functools import wraps
 from urllib.parse import urlparse
@@ -227,6 +227,14 @@ def dashboard():
     user_id = session['user_id']
     db      = get_db()
 
+    # Lazy cleanup: remove nonces consumed more than 10 minutes ago
+    db.execute(
+        "DELETE FROM nonces WHERE user_id=? AND consumed_at IS NOT NULL "
+        "AND datetime(consumed_at, '+10 minutes') <= datetime('now')",
+        (user_id,)
+    )
+    db.commit()
+
     unmatched_count = db.execute(
         "SELECT COUNT(*) FROM unmatched_items WHERE user_id=?", (user_id,)
     ).fetchone()[0]
@@ -283,12 +291,40 @@ def dashboard():
         if newer:
             update_available[c['id']] = newer['id']
 
+    # Available codes (active + recently consumed, so clipboard is safe)
+    now_utc   = datetime.now(timezone.utc)
+    raw_codes = db.execute(
+        "SELECT n.id, n.nonce_value, n.consumed_at, "
+        "       COALESCE(c.name, p.tag) AS provider_label "
+        "FROM nonces n "
+        "JOIN providers p ON p.id = n.provider_id "
+        "LEFT JOIN configurations c ON c.id = p.config_id "
+        "WHERE n.user_id = ? "
+        "  AND (n.consumed_at IS NULL "
+        "       OR datetime(n.consumed_at, '+10 minutes') > datetime('now')) "
+        "ORDER BY (n.consumed_at IS NOT NULL), n.received_at DESC",
+        (user_id,)
+    ).fetchall()
+    codes = []
+    for row in raw_codes:
+        entry = dict(row)
+        if row['consumed_at']:
+            consumed_at = datetime.fromisoformat(row['consumed_at'])
+            if consumed_at.tzinfo is None:
+                consumed_at = consumed_at.replace(tzinfo=timezone.utc)
+            ms = max(0, int(((consumed_at + timedelta(minutes=10)) - now_utc).total_seconds() * 1000))
+            entry['ms_until_delete'] = ms
+        else:
+            entry['ms_until_delete'] = None
+        codes.append(entry)
+
     return render_template('admin/dashboard.html',
                            own_configs=own_configs,
                            sub_configs=sub_configs,
                            unmatched_count=unmatched_count,
                            update_available=update_available,
-                           email_config_ids=email_config_ids)
+                           email_config_ids=email_config_ids,
+                           codes=codes)
 
 
 # ── Configuration management ──────────────────────────────────────────────────
@@ -542,6 +578,44 @@ def config_clear_nonces(config_id):
     )
     db.commit()
     return redirect(url_for('admin.config_detail', config_id=config_id))
+
+
+@admin_bp.post('/nonces/<int:nonce_id>/consume')
+@login_required
+def nonce_consume(nonce_id):
+    user_id = session['user_id']
+    db      = get_db()
+
+    nonce = db.execute(
+        "SELECT n.id, p.config_id "
+        "FROM nonces n JOIN providers p ON p.id = n.provider_id "
+        "WHERE n.id = ? AND n.user_id = ? AND n.consumed_at IS NULL",
+        (nonce_id, user_id)
+    ).fetchone()
+    if not nonce:
+        return jsonify({'error': 'Not found or already consumed'}), 404
+
+    now = datetime.now(timezone.utc).isoformat()
+    db.execute("UPDATE nonces SET consumed_at = ? WHERE id = ?", (now, nonce_id))
+
+    config_id = nonce['config_id']
+    if config_id:
+        db.execute(
+            "UPDATE configurations "
+            "SET client_test_count = client_test_count + 1, updated_at = datetime('now') "
+            "WHERE id = ? "
+            "  AND (owner_id = ? "
+            "       OR id IN (SELECT config_id FROM subscriptions WHERE user_id = ?))",
+            (config_id, user_id, user_id)
+        )
+        db.execute(
+            "UPDATE configurations SET status = 'valid_tested', updated_at = datetime('now') "
+            "WHERE id = ? AND status = 'valid' AND client_test_count >= 3 AND visibility = 'private'",
+            (config_id,)
+        )
+
+    db.commit()
+    return jsonify({'ok': True})
 
 
 # ── Provider management (config-scoped) ───────────────────────────────────────
