@@ -565,6 +565,11 @@ if 'providers' in tables:
         db.execute("ALTER TABLE providers_new RENAME TO providers")
         db.execute("PRAGMA foreign_keys = ON")
 
+if 'nonces' in tables:
+    cols = {r[1] for r in db.execute("PRAGMA table_info(nonces)").fetchall()}
+    if 'consumed_at' not in cols:
+        db.execute("ALTER TABLE nonces ADD COLUMN consumed_at TEXT DEFAULT NULL")
+
 db.commit()
 db.close()
 PY

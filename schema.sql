@@ -113,6 +113,3 @@ CREATE INDEX IF NOT EXISTS idx_configs_owner          ON configurations(owner_id
 CREATE INDEX IF NOT EXISTS idx_configs_status         ON configurations(status);
 CREATE INDEX IF NOT EXISTS idx_subscriptions_user     ON subscriptions(user_id);
 CREATE INDEX IF NOT EXISTS idx_subscriptions_config   ON subscriptions(config_id);
-
--- Migration: adds consumed_at to existing databases (no-op on fresh installs)
-ALTER TABLE nonces ADD COLUMN IF NOT EXISTS consumed_at TEXT DEFAULT NULL;
