@@ -5,6 +5,7 @@ Runs on 127.0.0.1:5000 via systemd, reverse-proxied by Apache2.
 
 REST endpoints (all under /api/):
   POST   /api/auth/login
+  POST   /api/auth/refresh
   POST   /api/auth/logout
   GET    /api/nonces
   DELETE /api/nonces/<id>
@@ -28,6 +29,7 @@ Flask CLI:
 import hashlib
 import json
 import re
+import secrets
 import sqlite3
 from datetime import datetime, timedelta, timezone
 from functools import wraps
@@ -126,6 +128,14 @@ def hash_token(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
 
+def make_refresh_token() -> str:
+    return secrets.token_urlsafe(32)
+
+
+def hash_refresh_token(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
 def require_auth(f):
     @wraps(f)
     def decorated(*args, **kwargs):
@@ -187,10 +197,14 @@ def login():
     now        = datetime.now(timezone.utc)
     expires_at = (now + timedelta(days=SESSION_LIFETIME_DAYS)).isoformat()
 
+    refresh_token = make_refresh_token()
+
     cur = db.execute(
-        "INSERT INTO sessions (user_id, token_hash, created_at, last_used_at, expires_at, client_type) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
-        (user['id'], '_placeholder_', now.isoformat(), now.isoformat(), expires_at, client_type)
+        "INSERT INTO sessions (user_id, token_hash, refresh_token_hash, "
+        "                      created_at, last_used_at, expires_at, client_type) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (user['id'], '_placeholder_', hash_refresh_token(refresh_token),
+         now.isoformat(), now.isoformat(), expires_at, client_type)
     )
     session_id = cur.lastrowid
     db.commit()
@@ -200,7 +214,8 @@ def login():
                (hash_token(token), session_id))
     db.commit()
 
-    return jsonify({'token': token, 'expires_at': expires_at}), 200
+    return jsonify({'token': token, 'expires_at': expires_at,
+                    'refresh_token': refresh_token}), 200
 
 
 @app.post('/api/auth/logout')
@@ -210,6 +225,43 @@ def logout():
     db.execute("DELETE FROM sessions WHERE id = ?", (g.session_id,))
     db.commit()
     return '', 204
+
+
+@app.post('/api/auth/refresh')
+def token_refresh():
+    data          = request.get_json(silent=True) or {}
+    refresh_token = data.get('refresh_token', '').strip()
+    if not refresh_token:
+        return jsonify({'error': 'refresh_token required'}), 400
+
+    rth = hash_refresh_token(refresh_token)
+    db  = get_db()
+    now = datetime.now(timezone.utc)
+
+    session = db.execute(
+        "SELECT id, user_id, client_type FROM sessions "
+        "WHERE refresh_token_hash = ? AND expires_at > ?",
+        (rth, now.isoformat())
+    ).fetchone()
+    if not session:
+        return jsonify({'error': 'Invalid or expired refresh token'}), 401
+
+    new_refresh = make_refresh_token()
+    expires_at  = (now + timedelta(days=SESSION_LIFETIME_DAYS)).isoformat()
+
+    new_access = make_token(session['user_id'], session['id'])
+    db.execute(
+        "UPDATE sessions "
+        "SET token_hash = ?, refresh_token_hash = ?, "
+        "    last_used_at = ?, expires_at = ? "
+        "WHERE id = ?",
+        (hash_token(new_access), hash_refresh_token(new_refresh),
+         now.isoformat(), expires_at, session['id'])
+    )
+    db.commit()
+
+    return jsonify({'token': new_access, 'expires_at': expires_at,
+                    'refresh_token': new_refresh}), 200
 
 
 @app.get('/api/nonces')

@@ -570,6 +570,11 @@ if 'nonces' in tables:
     if 'consumed_at' not in cols:
         db.execute("ALTER TABLE nonces ADD COLUMN consumed_at TEXT DEFAULT NULL")
 
+if 'sessions' in tables:
+    cols = {r[1] for r in db.execute("PRAGMA table_info(sessions)").fetchall()}
+    if 'refresh_token_hash' not in cols:
+        db.execute("ALTER TABLE sessions ADD COLUMN refresh_token_hash TEXT DEFAULT NULL UNIQUE")
+
 db.commit()
 db.close()
 PY

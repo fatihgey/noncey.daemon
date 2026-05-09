@@ -73,14 +73,15 @@ CREATE TABLE IF NOT EXISTS nonces (
 );
 
 CREATE TABLE IF NOT EXISTS sessions (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    token_hash   TEXT    NOT NULL UNIQUE,
-    client_type  TEXT    NOT NULL DEFAULT 'browser'
-                     CHECK(client_type IN ('browser', 'chrome', 'android')),
-    created_at   TEXT    NOT NULL DEFAULT (datetime('now')),
-    last_used_at TEXT    NOT NULL DEFAULT (datetime('now')),
-    expires_at   TEXT    NOT NULL
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id            INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    token_hash         TEXT    NOT NULL UNIQUE,
+    refresh_token_hash TEXT    DEFAULT NULL UNIQUE,
+    client_type        TEXT    NOT NULL DEFAULT 'browser'
+                           CHECK(client_type IN ('browser', 'chrome', 'android')),
+    created_at         TEXT    NOT NULL DEFAULT (datetime('now')),
+    last_used_at       TEXT    NOT NULL DEFAULT (datetime('now')),
+    expires_at         TEXT    NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS unmatched_items (
