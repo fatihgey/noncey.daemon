@@ -4,7 +4,7 @@
 
 {% if codes %}
 <div style="display:flex;align-items:center;gap:1rem;margin-bottom:.75rem;">
-  <h1 style="margin:0;">Available Codes</h1>
+  <h1 style="margin:0;">Code ad-hoc Consumption</h1>
   <form class="inline" method="post" action="{{ url_for('admin.nonces_clear') }}">
     <button class="btn btn-danger" type="submit"
             style="font-size:.75rem;padding:.15rem .55rem;">Clear</button>
@@ -156,12 +156,26 @@ document.querySelectorAll('.consume-btn').forEach(function(btn) {
       _clipboardFallback(code);
     }
 
+    if (btn.dataset.consumed) return;
+
     fetch(consumeUrl, { method: 'POST' }).then(function(r) {
       if (r.ok) {
+        btn.dataset.consumed = '1';
         row.style.opacity = '.4';
-        btn.closest('td').innerHTML =
-          '<span style="color:#aaa;font-size:.82rem;font-style:italic;">consumed</span>';
-        setTimeout(function() { row.remove(); }, 10 * 60 * 1000);
+        var minsLeft = 10;
+        var expireSpan = document.createElement('span');
+        expireSpan.style.cssText = 'color:#888;font-size:.82rem;font-style:italic;margin-left:.5rem;';
+        expireSpan.textContent = 'expires in ' + minsLeft + ' min';
+        btn.closest('td').appendChild(expireSpan);
+        var interval = setInterval(function() {
+          minsLeft--;
+          if (minsLeft > 0) {
+            expireSpan.textContent = 'expires in ' + minsLeft + ' min';
+          } else {
+            clearInterval(interval);
+          }
+        }, 60 * 1000);
+        setTimeout(function() { clearInterval(interval); row.remove(); }, 10 * 60 * 1000);
       }
     }).catch(function() {});
   });

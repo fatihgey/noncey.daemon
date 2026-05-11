@@ -264,8 +264,10 @@ def match_sms_provider(conn, user_id: int, sender_phone: str, body: str = ''):
         "           AND c.status IN ('valid', 'valid_tested')) "
         "       OR (c.visibility = 'public' "
         "           AND EXISTS (SELECT 1 FROM subscriptions s "
-        "                       WHERE s.user_id = ? AND s.config_id = c.id)))",
-        (user_id, user_id)
+        "                       WHERE s.user_id = ? AND s.config_id = c.id)) "
+        "       OR (c.visibility = 'private' AND c.status = 'incomplete' "
+        "           AND (SELECT auto_activate_adhoc FROM users WHERE id = ?) = 1))",
+        (user_id, user_id, user_id)
     ).fetchall()
 
     for prov in providers:
@@ -311,8 +313,10 @@ def find_matching_provider(conn, user_id: int, sender_addr: str, subject: str):
         "           AND c.status IN ('valid', 'valid_tested')) "
         "       OR (c.visibility = 'public' AND c.status = 'valid' "
         "           AND EXISTS (SELECT 1 FROM subscriptions s "
-        "                       WHERE s.user_id = ? AND s.config_id = c.id)))",
-        (user_id, user_id)
+        "                       WHERE s.user_id = ? AND s.config_id = c.id)) "
+        "       OR (c.visibility = 'private' AND c.status = 'incomplete' "
+        "           AND (SELECT auto_activate_adhoc FROM users WHERE id = ?) = 1))",
+        (user_id, user_id, user_id)
     ).fetchall()
 
     for prov in providers:

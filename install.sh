@@ -580,6 +580,26 @@ db.close()
 PY
 ok "Account deletion support migrations applied (v5)."
 
+# Fifth migration block: user auto-activation settings (v6)
+sudo -u noncey "$VENV/bin/python3" - "$DB_PATH" <<'PY'
+import sqlite3, sys
+db = sqlite3.connect(sys.argv[1])
+tables = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+
+if 'users' in tables:
+    cols = {r[1] for r in db.execute("PRAGMA table_info(users)").fetchall()}
+    for col, sql in [
+        ('auto_activate_valid', "ALTER TABLE users ADD COLUMN auto_activate_valid INTEGER NOT NULL DEFAULT 0"),
+        ('auto_activate_adhoc', "ALTER TABLE users ADD COLUMN auto_activate_adhoc INTEGER NOT NULL DEFAULT 0"),
+    ]:
+        if col not in cols:
+            db.execute(sql)
+
+db.commit()
+db.close()
+PY
+ok "User auto-activation settings migrations applied (v6)."
+
 (
     cd "$INSTALL_DIR"
     sudo -u noncey \

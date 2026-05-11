@@ -1,12 +1,14 @@
 CREATE TABLE IF NOT EXISTS users (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    username      TEXT    NOT NULL UNIQUE,
-    password_hash TEXT    NOT NULL,
-    email         TEXT    DEFAULT NULL,
-    is_admin      INTEGER NOT NULL DEFAULT 0,
-    created_at    TEXT    NOT NULL DEFAULT (datetime('now')),
-    delete_at     TEXT    DEFAULT NULL,
-    comment       TEXT    DEFAULT NULL
+    id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+    username             TEXT    NOT NULL UNIQUE,
+    password_hash        TEXT    NOT NULL,
+    email                TEXT    DEFAULT NULL,
+    is_admin             INTEGER NOT NULL DEFAULT 0,
+    created_at           TEXT    NOT NULL DEFAULT (datetime('now')),
+    delete_at            TEXT    DEFAULT NULL,
+    comment              TEXT    DEFAULT NULL,
+    auto_activate_valid  INTEGER NOT NULL DEFAULT 0,
+    auto_activate_adhoc  INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS configurations (

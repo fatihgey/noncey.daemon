@@ -172,11 +172,19 @@ def _auto_update_status(db, config_id: int):
     )
     has_prompt = config['prompt'] is not None
 
+    old_status = config['status']
     new_status = 'valid' if (has_channel_with_header and has_prompt) else 'incomplete'
     db.execute(
         "UPDATE configurations SET status=?, updated_at=datetime('now') WHERE id=?",
         (new_status, config_id)
     )
+    if new_status == 'valid' and old_status == 'incomplete':
+        db.execute(
+            "UPDATE configurations SET activated=1, updated_at=datetime('now') "
+            "WHERE id=? AND activated=0 "
+            "AND EXISTS(SELECT 1 FROM users WHERE id=configurations.owner_id AND auto_activate_valid=1)",
+            (config_id,)
+        )
 
 
 # ── Auth routes ───────────────────────────────────────────────────────────────
@@ -1408,33 +1416,52 @@ def marketplace_update(old_config_id, new_config_id):
 @login_required
 def account_settings():
     user_id = session['user_id']
-    if request.method == 'POST':
-        current   = request.form.get('current_password', '')
-        new_pw    = request.form.get('password', '')
-        confirm   = request.form.get('password2', '')
+    db      = get_db()
 
-        db   = get_db()
-        user = db.execute("SELECT password_hash FROM users WHERE id=?",
-                          (user_id,)).fetchone()
+    if request.method == 'POST':
+        form_action = request.form.get('form_action', 'password')
+
+        if form_action == 'settings':
+            auto_v = 1 if request.form.get('auto_activate_valid') else 0
+            auto_a = 1 if (request.form.get('auto_activate_adhoc') and auto_v) else 0
+            db.execute(
+                "UPDATE users SET auto_activate_valid=?, auto_activate_adhoc=? WHERE id=?",
+                (auto_v, auto_a, user_id)
+            )
+            db.commit()
+            flash('Settings saved.', 'success')
+            return render_template('admin/account_settings.html',
+                                   auto_activate_valid=bool(auto_v),
+                                   auto_activate_adhoc=bool(auto_a))
+
+        # Password change
+        user    = db.execute("SELECT password_hash FROM users WHERE id=?",
+                             (user_id,)).fetchone()
+        current = request.form.get('current_password', '')
+        new_pw  = request.form.get('password', '')
+        confirm = request.form.get('password2', '')
+
         if not bcrypt.checkpw(current.encode(), user['password_hash'].encode()):
             flash('Current password is incorrect.', 'error')
-            return render_template('admin/account_settings.html')
-        if not new_pw:
+        elif not new_pw:
             flash('New password must not be empty.', 'error')
-            return render_template('admin/account_settings.html')
-        if new_pw != confirm:
+        elif new_pw != confirm:
             flash('Passwords do not match.', 'error')
-            return render_template('admin/account_settings.html')
+        else:
+            pw_hash = bcrypt.hashpw(new_pw.encode(), bcrypt.gensalt()).decode()
+            db.execute("UPDATE users SET password_hash=? WHERE id=?", (pw_hash, user_id))
+            db.execute("DELETE FROM sessions WHERE user_id=?", (user_id,))
+            db.commit()
+            session.clear()
+            flash('Password changed. Please log in again.', 'success')
+            return redirect(url_for('admin.auth_login'))
 
-        pw_hash = bcrypt.hashpw(new_pw.encode(), bcrypt.gensalt()).decode()
-        db.execute("UPDATE users SET password_hash=? WHERE id=?", (pw_hash, user_id))
-        db.execute("DELETE FROM sessions WHERE user_id=?", (user_id,))
-        db.commit()
-        session.clear()
-        flash('Password changed. Please log in again.', 'success')
-        return redirect(url_for('admin.auth_login'))
-
-    return render_template('admin/account_settings.html')
+    row = db.execute(
+        "SELECT auto_activate_valid, auto_activate_adhoc FROM users WHERE id=?", (user_id,)
+    ).fetchone()
+    return render_template('admin/account_settings.html',
+                           auto_activate_valid=bool(row['auto_activate_valid']),
+                           auto_activate_adhoc=bool(row['auto_activate_adhoc']))
 
 
 @admin_bp.get('/account/gmail-filters.xml')

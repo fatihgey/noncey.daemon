@@ -4,8 +4,65 @@
 
 <h1>Account</h1>
 
+<style>
+  .switch-row { display:flex; align-items:center; justify-content:space-between; margin-bottom:.85rem; max-width:400px; }
+  .switch-label { font-weight:500; }
+  .toggle-switch { position:relative; display:inline-block; width:44px; height:24px; flex-shrink:0; margin-left:1rem; }
+  .toggle-switch input { opacity:0; width:0; height:0; }
+  .toggle-slider { position:absolute; cursor:pointer; top:0; left:0; right:0; bottom:0; background:#ccc; border-radius:24px; transition:.2s; }
+  .toggle-slider:before { content:""; position:absolute; height:18px; width:18px; left:3px; bottom:3px; background:#fff; border-radius:50%; transition:.2s; }
+  .toggle-switch input:checked + .toggle-slider { background:#1a1a2e; }
+  .toggle-switch input:checked + .toggle-slider:before { transform:translateX(20px); }
+  .toggle-switch input:disabled + .toggle-slider { opacity:.45; cursor:not-allowed; }
+</style>
+
+<h2>Settings</h2>
+<form method="post">
+  <input type="hidden" name="form_action" value="settings">
+
+  <div class="switch-row">
+    <label class="switch-label" for="switch_a">Activate configurations when they become valid for the first time</label>
+    <label class="toggle-switch">
+      <input type="checkbox" name="auto_activate_valid" id="switch_a"
+             {% if auto_activate_valid %}checked{% endif %}>
+      <span class="toggle-slider"></span>
+    </label>
+  </div>
+
+  <div class="switch-row">
+    <label class="switch-label" for="switch_b"
+           style="{{ 'color:#aaa;' if not auto_activate_valid else '' }}">Activate prompt-less configurations (labelled <span class="badge badge-incomplete">incomplete</span>) for code capture</label>
+    <label class="toggle-switch">
+      <input type="checkbox" name="auto_activate_adhoc" id="switch_b"
+             {% if auto_activate_adhoc %}checked{% endif %}
+             {% if not auto_activate_valid %}disabled{% endif %}>
+      <span class="toggle-slider"></span>
+    </label>
+  </div>
+
+  <button class="btn btn-primary" type="submit" style="margin-top:.25rem;">Save settings</button>
+</form>
+
+<script>
+document.getElementById('switch_a').addEventListener('change', function() {
+  var switchB = document.getElementById('switch_b');
+  var labelB  = switchB.closest('.switch-row').querySelector('.switch-label');
+  if (this.checked) {
+    switchB.disabled = false;
+    labelB.style.color = '';
+  } else {
+    switchB.checked  = false;
+    switchB.disabled = true;
+    labelB.style.color = '#aaa';
+  }
+});
+</script>
+
+<hr>
+
 <h2>Change password</h2>
 <form method="post" style="max-width:400px;">
+  <input type="hidden" name="form_action" value="password">
 
   <div class="field">
     <label for="current_password">Current password</label>
