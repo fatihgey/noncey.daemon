@@ -573,7 +573,8 @@ if 'nonces' in tables:
 if 'sessions' in tables:
     cols = {r[1] for r in db.execute("PRAGMA table_info(sessions)").fetchall()}
     if 'refresh_token_hash' not in cols:
-        db.execute("ALTER TABLE sessions ADD COLUMN refresh_token_hash TEXT DEFAULT NULL UNIQUE")
+        db.execute("ALTER TABLE sessions ADD COLUMN refresh_token_hash TEXT DEFAULT NULL")
+        db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_refresh_token ON sessions(refresh_token_hash) WHERE refresh_token_hash IS NOT NULL")
 
 db.commit()
 db.close()
